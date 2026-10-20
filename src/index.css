@@ -1,0 +1,74 @@
+@import "tailwindcss";
+
+@layer base {
+  body {
+    font-family: 'Cairo', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background-color: #0a0c13;
+    color: #f1f5f9;
+    overflow-x: hidden;
+  }
+
+  .font-mono-numbers {
+    font-family: 'JetBrains Mono', monospace;
+    font-feature-settings: 'tnum' on, 'zero' on;
+  }
+}
+
+/* Neon glow utilities */
+.glow-green {
+  box-shadow: 0 0 20px -3px rgba(0, 240, 144, 0.35), 0 0 8px 0 rgba(0, 240, 144, 0.2);
+}
+
+.glow-red {
+  box-shadow: 0 0 20px -3px rgba(255, 51, 102, 0.35), 0 0 8px 0 rgba(255, 51, 102, 0.2);
+}
+
+.glow-gold {
+  box-shadow: 0 0 20px -3px rgba(255, 184, 0, 0.35), 0 0 8px 0 rgba(255, 184, 0, 0.2);
+}
+
+.glow-purple {
+  box-shadow: 0 0 20px -3px rgba(168, 85, 247, 0.4), 0 0 8px 0 rgba(168, 85, 247, 0.25);
+}
+
+.glow-card {
+  box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+
+.glow-card-active {
+  box-shadow: 0 12px 35px -10px rgba(0, 240, 144, 0.15), 0 0 0 1px rgba(0, 240, 144, 0.3);
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #0a0c13;
+}
+::-webkit-scrollbar-thumb {
+  background: #1e2638;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #2e3a54;
+}
+
+@keyframes pulse-subtle {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.85; transform: scale(1.02); }
+}
+
+.animate-pulse-subtle {
+  animation: pulse-subtle 2s infinite ease-in-out;
+}
+
+@keyframes radar-sweep {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.animate-radar {
+  animation: radar-sweep 4s linear infinite;
+}

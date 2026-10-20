@@ -1,0 +1,8 @@
+{
+  "name": "Crypto Sniper VIP - Institutional Scanner & AI Analyst",
+  "description": "منصة كمية متقدمة لمسح وقنص صفقات الكريبتو وتحليلها بالذكاء الاصطناعي مع كروت صفقات VIP فاخرة وربط تليجرام وأسعار بينانس الحية.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
