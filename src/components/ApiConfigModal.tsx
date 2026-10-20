@@ -236,6 +236,47 @@ export const ApiConfigModal: React.FC<ApiConfigModalProps> = ({
                 </div>
               )}
             </div>
+
+            {/* Telegram Auto-Send Automation Toggles */}
+            <div className="p-3 rounded-lg bg-[#0a0c13] border border-sky-900/30 space-y-2 mt-2">
+              <span className="text-[11px] font-bold text-sky-400 block mb-1">
+                🤖 إعدادات البث التلقائي لتيليجرام (Automatic Dispatch):
+              </span>
+
+              <label className="flex items-start gap-2.5 cursor-pointer text-xs">
+                <input
+                  type="checkbox"
+                  checked={formData.autoSendTelegram ?? true}
+                  onChange={(e) => setFormData({ ...formData, autoSendTelegram: e.target.checked })}
+                  className="rounded border-slate-700 text-[#00f090] focus:ring-0 bg-[#0e121c] mt-0.5"
+                />
+                <div>
+                  <span className="text-white font-medium block">
+                    بث الصفقات تلقائياً إلى تيليجرام فور رصدها (Auto-Send on Detection)
+                  </span>
+                  <span className="text-[10px] text-slate-400 block mt-0.5">
+                    يقوم البوت بإرسال إشارة الصفقة فور ظهورها مباشرة متضمنة مقدار التيك بروفت بالدولار ونسبة التحرك المستهدفة.
+                  </span>
+                </div>
+              </label>
+
+              <label className="flex items-start gap-2.5 cursor-pointer text-xs pt-1 border-t border-slate-800/80">
+                <input
+                  type="checkbox"
+                  checked={formData.autoSendTargetHit ?? true}
+                  onChange={(e) => setFormData({ ...formData, autoSendTargetHit: e.target.checked })}
+                  className="rounded border-slate-700 text-[#00f090] focus:ring-0 bg-[#0e121c] mt-0.5"
+                />
+                <div>
+                  <span className="text-white font-medium block">
+                    إرسال إشعار فوري عند تحقيق أهداف الربح (TP Hit Alerts)
+                  </span>
+                  <span className="text-[10px] text-slate-400 block mt-0.5">
+                    إشعار لحظي في تيليجرام عند ملامسة السعر لأي هدف (TP1 - TP6) مع مقدار الربح المحقق.
+                  </span>
+                </div>
+              </label>
+            </div>
           </div>
 
           {/* Section 3: Quantitative Rules & Risk Controls */}

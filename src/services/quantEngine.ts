@@ -302,11 +302,14 @@ export function generateTargets(
       hit = currentPrice <= formattedPrice;
     }
 
+    const profitAmount = formatPriceValue(Math.abs(formattedPrice - entryPrice));
+
     return {
       id,
       label: `TP${id}`,
       price: formattedPrice,
       targetPct,
+      profitAmount,
       hit,
       isNext: false,
     };

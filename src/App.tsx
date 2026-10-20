@@ -18,12 +18,17 @@ import {
   Radio, 
   Send,
   Loader2,
-  CheckCircle2
+  CheckCircle2,
+  Bot,
+  BellRing,
+  AlertTriangle,
+  X
 } from 'lucide-react';
 import { AppConfig, CryptoPair, Timeframe, TradeSignal } from './types';
 import { fetchBinanceKlines, BinancePriceStream } from './services/binance';
 import { generateQuantitativeSignal } from './services/quantEngine';
 import { generateAiTradeAnalysis } from './services/aiAnalyst';
+import { sendSignalToTelegram, sendTargetHitToTelegram } from './services/telegram';
 import { VipSignalCard } from './components/VipSignalCard';
 import { ApiConfigModal } from './components/ApiConfigModal';
 import { VercelExportModal } from './components/VercelExportModal';
@@ -42,6 +47,8 @@ const DEFAULT_CONFIG: AppConfig = {
   codeCraftModel: 'gpt-4o-mini',
   telegramBotToken: '',
   telegramChatId: '',
+  autoSendTelegram: true,
+  autoSendTargetHit: true,
   geminiApiKey: '',
   autoRefresh: true,
   refreshIntervalSeconds: 60,
@@ -76,6 +83,8 @@ export default function App() {
   const [isVercelExportOpen, setIsVercelExportOpen] = useState(false);
   const [isPythonModalOpen, setIsPythonModalOpen] = useState(false);
   const [activePythonPair, setActivePythonPair] = useState<CryptoPair>('SOLUSDT');
+  const [isBroadcastingAll, setIsBroadcastingAll] = useState(false);
+  const [telegramToast, setTelegramToast] = useState<{ message: string; type: 'success' | 'info' | 'error' } | null>(null);
 
   // 4. Engine & Live Connection State
   const [isScanning, setIsScanning] = useState(false);
@@ -84,6 +93,8 @@ export default function App() {
   const [lastScannedTimestamp, setLastScannedTimestamp] = useState<number>(Date.now());
 
   const priceStreamRef = useRef<BinancePriceStream | null>(null);
+  const dispatchedSignalsRef = useRef<Set<string>>(new Set());
+  const hitTargetsDispatchedRef = useRef<Set<string>>(new Set());
 
   // Save config to localStorage
   const handleSaveConfig = (newConfig: AppConfig) => {
@@ -92,6 +103,25 @@ export default function App() {
       localStorage.setItem('crypto_sniper_vip_config', JSON.stringify(newConfig));
     } catch (e) {
       console.error('Failed to save config to localStorage:', e);
+    }
+
+    // If Telegram credentials are newly provided and auto-send is enabled, broadcast current active signals immediately
+    if (newConfig.autoSendTelegram && newConfig.telegramBotToken && newConfig.telegramChatId && signals.length > 0) {
+      signals.forEach((sig) => {
+        const sigKey = `${sig.pair}_${sig.direction}_${sig.timeframe}_${Math.floor(sig.timestamp / (15 * 60 * 1000))}`;
+        if (!dispatchedSignalsRef.current.has(sigKey)) {
+          dispatchedSignalsRef.current.add(sigKey);
+          sendSignalToTelegram(sig, newConfig.telegramBotToken, newConfig.telegramChatId).then(res => {
+            if (res.success) {
+              setTelegramToast({
+                message: `🚀 تم إرسال صفقة ${sig.pair} تلقائياً للبوت مع مقادير التيك بروفت ونسبة التحرك!`,
+                type: 'success',
+              });
+              setTimeout(() => setTelegramToast(null), 6000);
+            }
+          });
+        }
+      });
     }
   };
 
@@ -123,6 +153,27 @@ export default function App() {
     setIsScanning(false);
     setLastScannedTimestamp(Date.now());
     setSecondsUntilRefresh(config.refreshIntervalSeconds || 60);
+
+    // Auto-dispatch signals to Telegram upon appearance:
+    if (config.autoSendTelegram && config.telegramBotToken && config.telegramChatId) {
+      newSignals.forEach((sig) => {
+        const sigKey = `${sig.pair}_${sig.direction}_${sig.timeframe}_${Math.floor(sig.timestamp / (15 * 60 * 1000))}`;
+        if (!dispatchedSignalsRef.current.has(sigKey)) {
+          dispatchedSignalsRef.current.add(sigKey);
+          sendSignalToTelegram(sig, config.telegramBotToken, config.telegramChatId)
+            .then((res) => {
+              if (res.success) {
+                setTelegramToast({
+                  message: `🚀 تم إرسال صفقة ${sig.pair} (${sig.direction === 'BUY' ? 'شراء ↗' : 'بيع ↘'}) تلقائياً للبوت مع مقدار التيك بروفت ونسبة التحرك!`,
+                  type: 'success',
+                });
+                setTimeout(() => setTelegramToast(null), 6000);
+              }
+            })
+            .catch((err) => console.error('Telegram auto-dispatch error:', err));
+        }
+      });
+    }
 
     // Play subtle alert if configured
     if (config.soundEnabled && newSignals.length > 0) {
@@ -169,9 +220,29 @@ export default function App() {
               return { ...t, hit };
             });
 
-            // If a new target was just hit, trigger celebration chime!
-            if (newTargetHit && config.soundEnabled) {
-              soundManager.playTargetHitAlert();
+            // If a new target was just hit, trigger celebration chime and auto-send alert to Telegram!
+            if (newTargetHit) {
+              if (config.soundEnabled) {
+                soundManager.playTargetHitAlert();
+              }
+
+              if (config.autoSendTargetHit && config.telegramBotToken && config.telegramChatId) {
+                const justHit = updatedTargets.find(t => t.hit && !hitTargetsDispatchedRef.current.has(`${sig.id}_TP${t.id}`));
+                if (justHit) {
+                  hitTargetsDispatchedRef.current.add(`${sig.id}_TP${justHit.id}`);
+                  sendTargetHitToTelegram(sig, justHit, config.telegramBotToken, config.telegramChatId)
+                    .then(res => {
+                      if (res.success) {
+                        setTelegramToast({
+                          message: `🎯 تم إرسال إشعار تحقيق الهدف ${justHit.label} لزوج ${sig.pair} إلى تيليجرام تلقائياً!`,
+                          type: 'success',
+                        });
+                        setTimeout(() => setTelegramToast(null), 5000);
+                      }
+                    })
+                    .catch(e => console.error('Telegram target hit dispatch error:', e));
+                }
+              }
             }
 
             // Recalculate next target
@@ -248,8 +319,62 @@ export default function App() {
     setIsPythonModalOpen(true);
   };
 
+  // Broadcast all currently visible signals to Telegram
+  const handleBroadcastAllSignals = async () => {
+    if (!config.telegramBotToken || !config.telegramChatId) {
+      setTelegramToast({
+        message: 'يرجى إدخال Bot Token و Chat ID أولاً في شاشة الإعدادات لتفعيل البث التلقائي!',
+        type: 'error',
+      });
+      setIsConfigOpen(true);
+      return;
+    }
+
+    setIsBroadcastingAll(true);
+    let sentCount = 0;
+    for (const sig of filteredSignals) {
+      try {
+        const res = await sendSignalToTelegram(sig, config.telegramBotToken, config.telegramChatId);
+        if (res.success) sentCount++;
+      } catch (e) {
+        console.error(e);
+      }
+    }
+    setIsBroadcastingAll(false);
+
+    setTelegramToast({
+      message: `🚀 تم بنجاح بث ${sentCount} صفقة VIP إلى تيليجرام متضمنة مقادير التيك بروفت ونسب التحرك!`,
+      type: 'success',
+    });
+    setTimeout(() => setTelegramToast(null), 6000);
+  };
+
   return (
-    <div className="min-h-screen bg-[#0a0c13] text-slate-100 flex flex-col font-sans" dir="rtl">
+    <div className="min-h-screen bg-[#0a0c13] text-slate-100 flex flex-col font-sans relative" dir="rtl">
+      {/* Floating Telegram Toast Notification Banner */}
+      {telegramToast && (
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 w-11/12 max-w-xl" dir="rtl">
+          <div className={`p-4 rounded-2xl shadow-2xl border flex items-center justify-between gap-3 ${
+            telegramToast.type === 'error'
+              ? 'bg-rose-950/95 text-rose-200 border-rose-600/50 glow-red'
+              : 'bg-[#0d1424]/95 text-sky-200 border-sky-500/50 glow-purple backdrop-blur-md'
+          }`}>
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-xl bg-sky-500/20 text-[#38bdf8]">
+                <Bot className="w-5 h-5 animate-pulse" />
+              </div>
+              <p className="text-xs sm:text-sm font-bold leading-snug">{telegramToast.message}</p>
+            </div>
+            <button
+              onClick={() => setTelegramToast(null)}
+              className="p-1 rounded-lg text-slate-400 hover:text-white"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Top Navigation Bar */}
       <header className="sticky top-0 z-40 bg-[#0c101a]/95 backdrop-blur-md border-b border-slate-800/80 px-4 sm:px-8 py-3.5">
         <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-4">
@@ -276,11 +401,48 @@ export default function App() {
 
           {/* Quick Stats & Live Stream Indicator */}
           <div className="flex items-center gap-2 sm:gap-3">
+            {/* Telegram Auto-Send Indicator */}
+            {config.telegramBotToken && config.telegramChatId ? (
+              <div 
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-sky-950/50 border border-sky-500/30 text-xs font-mono-numbers text-sky-300"
+                title="البث التلقائي مفعل لتيليجرام"
+              >
+                <span className={`w-2 h-2 rounded-full ${config.autoSendTelegram ? 'bg-sky-400 shadow-[0_0_8px_#38bdf8]' : 'bg-slate-500'}`} />
+                <span className="hidden lg:inline">{config.autoSendTelegram ? 'البث التلقائي: نشط 🤖' : 'البث التلقائي: معطل'}</span>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setIsConfigOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-xs font-mono-numbers text-amber-300 transition-all"
+                title="اضغط لضبط بوت تيليجرام وتفعيل البث التلقائي"
+              >
+                <Bot className="w-3.5 h-3.5" />
+                <span className="hidden md:inline">ربط بوت تيليجرام ⚠️</span>
+              </button>
+            )}
+
+            {/* Broadcast All Active Signals Button */}
+            <button
+              type="button"
+              onClick={handleBroadcastAllSignals}
+              disabled={isBroadcastingAll || filteredSignals.length === 0}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-white font-bold text-xs shadow-lg shadow-sky-500/25 transition-all disabled:opacity-50"
+              title="بث كل الصفقات النشطة الآن إلى تيليجرام"
+            >
+              {isBroadcastingAll ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Send className="w-4 h-4" />
+              )}
+              <span className="hidden sm:inline">بث للتلجرام 🚀</span>
+            </button>
+
             {/* Live WebSocket status */}
             <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900/80 border border-slate-800 text-xs font-mono-numbers">
               <span className={`w-2 h-2 rounded-full ${wsConnected ? 'bg-[#00f090] shadow-[0_0_8px_#00f090]' : 'bg-amber-400 animate-pulse'}`} />
               <span className="text-slate-300 hidden sm:inline">
-                {wsConnected ? 'Binance Futures WS متصل' : 'جاري الاتصال...'}
+                {wsConnected ? 'Binance WS متصل' : 'جاري الاتصال...'}
               </span>
             </div>
 

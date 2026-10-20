@@ -25,7 +25,8 @@ export interface TargetLevel {
   id: number;
   label: string; // TP1, TP2, ...
   price: number;
-  targetPct: number;
+  targetPct: number; // نسبة التحرك %
+  profitAmount: number; // مقدار التيك بروفت (بالنقاط/الدولار)
   hit: boolean;
   isNext: boolean;
   hitTime?: number;
@@ -90,6 +91,8 @@ export interface AppConfig {
   codeCraftModel: string;
   telegramBotToken: string;
   telegramChatId: string;
+  autoSendTelegram: boolean; // إرسال تلقائي للإشارات فور ظهورها
+  autoSendTargetHit: boolean; // إرسال تلقائي عند تحقيق أهداف الربح
   geminiApiKey: string;
   autoRefresh: boolean;
   refreshIntervalSeconds: number;

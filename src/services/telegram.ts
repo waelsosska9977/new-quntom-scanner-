@@ -57,40 +57,45 @@ export async function sendSignalToTelegram(
   const dirBadge = isBuy ? '🟢 *شراء قوي (BUY / LONG) ↗*' : '🔴 *بيع قوي (SELL / SHORT) ↘*';
   const hitTargetsCount = signal.targets.filter(t => t.hit).length;
   
-  // Format Targets nicely
+  // Calculate stop loss distance
+  const slDistancePoints = Math.abs(signal.entryPrice - signal.stopLoss);
+  const slDistancePct = ((slDistancePoints / signal.entryPrice) * 100).toFixed(2);
+
+  // Format Targets nicely showing exact TP amount and movement percentage
   const targetsText = signal.targets.map(t => {
     let icon = '⚪';
     let statusText = '';
     if (t.hit) {
       icon = '✅';
-      statusText = '_(تم تحقيقه)_';
+      statusText = '_(تم تحقيقه ✔)_';
     } else if (t.isNext) {
       icon = '🎯';
-      statusText = '*[الهدف النشط القادم]*';
+      statusText = '*[الهدف النشط القادم ⚡]*';
     } else {
       icon = '▫️';
       statusText = '_(معلق)_';
     }
-    return `${icon} *${t.label}:* \`${t.price}\` (+${t.targetPct}%) ${statusText}`;
-  }).join('\n');
+    const profitStr = t.profitAmount !== undefined ? `+${t.profitAmount}` : `+${Math.abs(t.price - signal.entryPrice).toFixed(4)}`;
+    return `${icon} *${t.label}:* \`${t.price}\`\n    ↳ 💰 مقدار التيك بروفت: \`${profitStr} USDT\`\n    ↳ 📈 نسبة التحرك: \`+${t.targetPct}%\` ${statusText}`;
+  }).join('\n\n');
 
   const pnlDisplay = signal.pnlPercent >= 0 
-    ? `+${signal.pnlPercent}% (ربح +${signal.pnlPoints} نقطة)` 
-    : `${signal.pnlPercent}% (تراجع ${signal.pnlPoints} نقطة)`;
+    ? `+${signal.pnlPercent}% (ربح +${signal.pnlPoints} USDT)` 
+    : `${signal.pnlPercent}% (تراجع ${signal.pnlPoints} USDT)`;
 
-  const message = `🏆 *إشارة قناص VIP مؤسساتية - إشعار جديد* 🏆
+  const message = `🏆 *إشارة قناص VIP مؤسساتية - إشعار تلقائي* 🏆
 ━━━━━━━━━━━━━━━━━━━━
 📌 *الزوج:* #${signal.pair} | *الفريم:* ${signal.timeframe.toUpperCase()}
 ⚡ *الاتجاه:* ${dirBadge}
 ⭐ *قوة الإشارة (Score):* \`${signal.score} / 100\` 💎
 
-🎯 *سعر الدخول:* \`${signal.entryPrice}\`
-🛡️ *وقف الخسارة (SL):* \`${signal.stopLoss}\`
+🎯 *سعر الدخول المحوري:* \`${signal.entryPrice}\`
+🛡️ *وقف الخسارة (SL):* \`${signal.stopLoss}\` (المخاطرة: \`-${slDistancePoints.toFixed(4)} USDT\` / \`-${slDistancePct}%\`)
 📈 *السعر اللحظي:* \`${signal.currentPrice}\`
-💰 *الأرباح اللحظية:* \`${pnlDisplay}\`
+🚀 *نسبة التحرك اللحظية:* \`${pnlDisplay}\`
 📊 *نسبة الأهداف المحققة:* \`${hitTargetsCount} / 6\`
 
-🎯 *شبكة الأهداف التفاعلية (TP Targets):*
+🎯 *مقدار التيك بروفت ونسب التحرك المستهدفة:*
 ${targetsText}
 
 ━━━━━━━━━━━━━━━━━━━━
@@ -99,7 +104,7 @@ ${targetsText}
 ▫️ *تحليل الدلتا (CVD):* ${signal.aiThesis.deltaAnalysis}
 ▫️ *امتصاص السيولة (Absorption):* ${signal.aiThesis.absorption}
 ▫️ *مؤشر RSI والفوليوم:* ${signal.aiThesis.rsiVolume}
-▫️ *العائد للمخاطرة:* ${signal.aiThesis.riskReward}
+▫️ *العائد للمخاطرة (R:R):* ${signal.aiThesis.riskReward}
 
 ⚙️ *مقاييس الخوارزمية (Train/Test Backtest):*
 • Win Rate (In-Sample): \`${signal.metrics.inSampleWinRate}%\`
@@ -129,5 +134,57 @@ ${targetsText}
     }
   } catch (err: any) {
     return { success: false, message: `تعذر الاتصال بـ Telegram API: ${err.message}` };
+  }
+}
+
+/**
+ * Send instant celebratory notification when a specific Take Profit target is achieved
+ */
+export async function sendTargetHitToTelegram(
+  signal: TradeSignal,
+  target: import('../types').TargetLevel,
+  botToken: string,
+  chatId: string
+): Promise<{ success: boolean; message: string }> {
+  if (!botToken || !chatId) {
+    return { success: false, message: 'مفاتيح تيليجرام غير مهيأة' };
+  }
+
+  const profitStr = target.profitAmount !== undefined 
+    ? `+${target.profitAmount}` 
+    : `+${Math.abs(target.price - signal.entryPrice).toFixed(4)}`;
+
+  const nextTarget = signal.targets.find(t => t.id === target.id + 1);
+
+  const message = `🎉 *مبروك! تم تحقيق هدف ربح بنجاح (TP HIT)* 🎉
+━━━━━━━━━━━━━━━━━━━━
+📌 *الزوج:* #${signal.pair} | *الاتجاه:* ${signal.direction === 'BUY' ? 'شراء ↗' : 'بيع ↘'}
+🎯 *الهدف المحقق:* *${target.label}* ✅
+💵 *سعر تحقيق الهدف:* \`${target.price}\`
+💰 *مقدار التيك بروفت المحقق:* \`${profitStr} USDT\`
+📈 *نسبة التحرك المحققة:* \`+${target.targetPct}%\`
+
+${nextTarget ? `⚡ *الهدف التالي المستهدف:* *${nextTarget.label}* عند \`${nextTarget.price}\` (+${nextTarget.targetPct}%)` : '🏆 *تم اقتناص جميع الأهداف بنجاح تام!* 🚀'}
+
+⏰ *التوقيت:* ${new Date().toLocaleTimeString('ar-EG')}
+🤖 _Crypto Sniper VIP - Automated Quantitative Execution_`;
+
+  try {
+    const url = `https://api.telegram.org/bot${botToken.trim()}/sendMessage`;
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: chatId.trim(),
+        text: message,
+        parse_mode: 'Markdown',
+        disable_web_page_preview: true,
+      }),
+    });
+
+    const data = await response.json();
+    return { success: data.ok, message: data.ok ? 'تم إرسال إشعار تحقيق الهدف' : (data.description || 'فشل') };
+  } catch (err: any) {
+    return { success: false, message: err.message };
   }
 }

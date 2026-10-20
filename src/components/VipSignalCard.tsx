@@ -265,6 +265,8 @@ export const VipSignalCard: React.FC<VipSignalCardProps> = ({
 
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
           {signal.targets.map((target) => {
+            const profitStr = target.profitAmount !== undefined ? `+${target.profitAmount}` : `+${Math.abs(target.price - signal.entryPrice).toFixed(4)}`;
+
             if (target.hit) {
               // 1. Hit Target: Dark neon green card + checkmark + price + "تم تحقيقه"
               return (
@@ -279,7 +281,11 @@ export const VipSignalCard: React.FC<VipSignalCardProps> = ({
                   <div className="font-mono-numbers text-xs font-bold text-white tracking-tight">
                     {target.price}
                   </div>
-                  <div className="text-[10px] text-[#00f090] font-medium mt-0.5">
+                  <div className="flex items-center justify-between text-[10px] font-mono-numbers text-emerald-400 font-semibold mt-0.5">
+                    <span>{profitStr}</span>
+                    <span>+{target.targetPct}%</span>
+                  </div>
+                  <div className="text-[9px] text-[#00f090] font-medium mt-0.5">
                     تم تحقيقه ✔
                   </div>
                 </div>
@@ -300,7 +306,11 @@ export const VipSignalCard: React.FC<VipSignalCardProps> = ({
                   <div className="font-mono-numbers text-xs font-bold text-white tracking-tight">
                     {target.price}
                   </div>
-                  <div className="text-[10px] text-purple-300 font-bold mt-0.5">
+                  <div className="flex items-center justify-between text-[10px] font-mono-numbers text-purple-300 font-bold mt-0.5">
+                    <span>{profitStr}</span>
+                    <span>+{target.targetPct}%</span>
+                  </div>
+                  <div className="text-[9px] text-purple-300 font-bold mt-0.5">
                     الهدف التالي ⚡
                   </div>
                 </div>
@@ -320,7 +330,11 @@ export const VipSignalCard: React.FC<VipSignalCardProps> = ({
                 <div className="font-mono-numbers text-xs font-bold text-slate-300 tracking-tight">
                   {target.price}
                 </div>
-                <div className="text-[10px] text-slate-500 mt-0.5">
+                <div className="flex items-center justify-between text-[10px] font-mono-numbers text-slate-400 mt-0.5">
+                  <span>{profitStr}</span>
+                  <span className="text-slate-300 font-medium">+{target.targetPct}%</span>
+                </div>
+                <div className="text-[9px] text-slate-500 mt-0.5">
                   بانتظار الوصول ○
                 </div>
               </div>
