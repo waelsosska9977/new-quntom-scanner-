@@ -20,7 +20,7 @@ interface MarketOverviewCardProps {
   onBroadcastTelegram: () => void;
 }
 
-export const MarketOverviewCard: React.FC<MarketOverviewCardProps> = ({
+const MarketOverviewCardComponent: React.FC<MarketOverviewCardProps> = ({
   signals,
   onSelectPair,
   onOpenChat,
@@ -216,3 +216,6 @@ export const MarketOverviewCard: React.FC<MarketOverviewCardProps> = ({
     </div>
   );
 };
+
+export const MarketOverviewCard = React.memo(MarketOverviewCardComponent);
+

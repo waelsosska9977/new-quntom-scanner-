@@ -31,15 +31,17 @@ interface VipSignalCardProps {
   signal: TradeSignal;
   config: AppConfig;
   onUpdateSignal: (updatedSignal: TradeSignal) => void;
+  defaultShowChart?: boolean;
 }
 
-export const VipSignalCard: React.FC<VipSignalCardProps> = ({
+const VipSignalCardComponent: React.FC<VipSignalCardProps> = ({
   signal,
   config,
   onUpdateSignal,
+  defaultShowChart = false,
 }) => {
-  const [isAiExpanded, setIsAiExpanded] = useState(true);
-  const [showChart, setShowChart] = useState(true);
+  const [isAiExpanded, setIsAiExpanded] = useState(false);
+  const [showChart, setShowChart] = useState(defaultShowChart);
   const [isSendingTelegram, setIsSendingTelegram] = useState(false);
   const [telegramStatus, setTelegramStatus] = useState<{ success?: boolean; text?: string } | null>(null);
   const [isRefreshingAi, setIsRefreshingAi] = useState(false);
@@ -345,10 +347,17 @@ export const VipSignalCard: React.FC<VipSignalCardProps> = ({
 
       {/* 5. Institutional AI Trade Thesis Box */}
       <div className="relative mb-4 rounded-xl bg-[#0c101a] border border-slate-800/90 overflow-hidden">
-        <button
-          type="button"
+        <div
           onClick={() => setIsAiExpanded(!isAiExpanded)}
-          className="w-full px-4 py-3 bg-gradient-to-r from-slate-900/90 via-[#101422] to-slate-900/90 flex items-center justify-between text-right border-b border-slate-800/80 hover:bg-slate-800/40 transition-colors"
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              setIsAiExpanded(!isAiExpanded);
+            }
+          }}
+          role="button"
+          tabIndex={0}
+          className="w-full px-4 py-3 bg-gradient-to-r from-slate-900/90 via-[#101422] to-slate-900/90 flex items-center justify-between text-right border-b border-slate-800/80 hover:bg-slate-800/40 transition-colors cursor-pointer select-none"
         >
           <div className="flex items-center gap-2">
             <div className="p-1.5 rounded-lg bg-emerald-500/10 text-[#00f090] border border-[#00f090]/30">
@@ -375,7 +384,7 @@ export const VipSignalCard: React.FC<VipSignalCardProps> = ({
             </button>
             {isAiExpanded ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
           </div>
-        </button>
+        </div>
 
         {isAiExpanded && (
           <div className="p-4 space-y-3 text-xs leading-relaxed">
@@ -466,3 +475,6 @@ export const VipSignalCard: React.FC<VipSignalCardProps> = ({
     </div>
   );
 };
+
+export const VipSignalCard = React.memo(VipSignalCardComponent);
+

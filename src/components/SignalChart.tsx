@@ -15,7 +15,7 @@ interface SignalChartProps {
   signal: TradeSignal;
 }
 
-export const SignalChart: React.FC<SignalChartProps> = ({ signal }) => {
+const SignalChartComponent: React.FC<SignalChartProps> = ({ signal }) => {
   const isBuy = signal.direction === 'BUY';
   const lineColor = isBuy ? '#00f090' : '#ff3366';
   const gradientId = `chart-gradient-${signal.id.replace(/[^a-zA-Z0-9]/g, '-')}`;
@@ -198,6 +198,9 @@ export const SignalChart: React.FC<SignalChartProps> = ({ signal }) => {
     </div>
   );
 };
+
+export const SignalChart = React.memo(SignalChartComponent);
+
 
 interface CustomTooltipProps {
   active?: boolean;

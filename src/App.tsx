@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { 
   Zap, 
   Sliders, 
@@ -26,7 +26,10 @@ import {
   Search,
   Coins,
   BarChart2,
-  MessageSquare
+  MessageSquare,
+  ChevronLeft,
+  ChevronRight,
+  Gauge
 } from 'lucide-react';
 import { AppConfig, CryptoPair, PairLiquidityInfo, Timeframe, TradeSignal } from './types';
 import { fetchBinanceKlines, BinancePriceStream, fetchTop50LiquidityPairs, TOP_50_DEFAULT_PAIRS } from './services/binance';
@@ -96,7 +99,12 @@ export default function App() {
   const [isBroadcastingAll, setIsBroadcastingAll] = useState(false);
   const [telegramToast, setTelegramToast] = useState<{ message: string; type: 'success' | 'info' | 'error' } | null>(null);
 
-  // 4. Engine & Live Connection State
+  // 4. Performance & Pagination State (Ultra-Fast 50 Coins Display)
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(10); // Default 10 per page for ultra-lightweight rendering
+  const [globalChartsEnabled, setGlobalChartsEnabled] = useState<boolean>(false);
+
+  // 5. Engine & Live Connection State
   const [isScanning, setIsScanning] = useState(false);
   const [secondsUntilRefresh, setSecondsUntilRefresh] = useState(60);
   const [wsConnected, setWsConnected] = useState(false);
@@ -105,6 +113,7 @@ export default function App() {
   const priceStreamRef = useRef<BinancePriceStream | null>(null);
   const dispatchedSignalsRef = useRef<Set<string>>(new Set());
   const hitTargetsDispatchedRef = useRef<Set<string>>(new Set());
+  const pendingPricesRef = useRef<Map<string, number>>(new Map());
 
   // Fetch real Top 50 Liquidity coins from Binance on mount
   useEffect(() => {
@@ -156,17 +165,17 @@ export default function App() {
 
     const newSignals: TradeSignal[] = [];
 
-    // Parallel scanning in chunks of 10 for lightning-fast execution
-    const chunkSize = 10;
+    // Parallel scanning in chunks of 15 for lightning-fast execution
+    const chunkSize = 15;
     for (let i = 0; i < targetPairs.length; i += chunkSize) {
       const chunk = targetPairs.slice(i, i + chunkSize);
-      const chunkPromises = chunk.map(async (pair) => {
+      const chunkPromises = chunk.map(async (pair, pairIdx) => {
         try {
-          const klines = await fetchBinanceKlines(pair, selectedTimeframe, 120);
+          const klines = await fetchBinanceKlines(pair, selectedTimeframe, 60);
           const signal = generateQuantitativeSignal(pair, selectedTimeframe, klines);
 
-          // If user configured CodeCraft key, asynchronously fetch enhanced AI thesis
-          if (config.codeCraftApiKey && config.codeCraftApiKey.trim().length > 0) {
+          // If user configured CodeCraft key, asynchronously fetch enhanced AI thesis for top 2 signals only to prevent network bottlenecks
+          if (config.codeCraftApiKey && config.codeCraftApiKey.trim().length > 0 && i === 0 && pairIdx < 2) {
             generateAiTradeAnalysis(signal, signal.metrics, config).then(thesis => {
               setSignals(prev => prev.map(s => s.id === signal.id ? { ...s, aiThesis: thesis, score: thesis.confidenceScore } : s));
             }).catch(() => {});
@@ -222,93 +231,11 @@ export default function App() {
     executeMarketScan();
   }, [executeMarketScan]);
 
-  // Setup Binance Live WebSocket Price Stream
+  // Setup Binance Live WebSocket Price Stream (Only connects once or on pair set change)
   useEffect(() => {
     const handleLivePrice = (symbol: string, livePrice: number) => {
       setWsConnected(true);
-      setSignals((prevSignals) => {
-        return prevSignals.map((sig) => {
-          if (sig.pair === symbol) {
-            // Recalculate PnL
-            let pnlPercent = 0;
-            let pnlPoints = 0;
-            if (sig.direction === 'BUY') {
-              pnlPercent = ((livePrice - sig.entryPrice) / sig.entryPrice) * 100;
-              pnlPoints = livePrice - sig.entryPrice;
-            } else {
-              pnlPercent = ((sig.entryPrice - livePrice) / sig.entryPrice) * 100;
-              pnlPoints = sig.entryPrice - livePrice;
-            }
-
-            // Check Targets
-            let newTargetHit = false;
-            const updatedTargets = sig.targets.map((t) => {
-              let hit = t.hit;
-              if (!hit) {
-                if (sig.direction === 'BUY' && livePrice >= t.price) {
-                  hit = true;
-                  newTargetHit = true;
-                } else if (sig.direction === 'SELL' && livePrice <= t.price) {
-                  hit = true;
-                  newTargetHit = true;
-                }
-              }
-              return { ...t, hit };
-            });
-
-            // If a new target was just hit, trigger celebration chime and auto-send alert to Telegram!
-            if (newTargetHit) {
-              if (config.soundEnabled) {
-                soundManager.playTargetHitAlert();
-              }
-
-              if (config.autoSendTargetHit && config.telegramBotToken && config.telegramChatId) {
-                const justHit = updatedTargets.find(t => t.hit && !hitTargetsDispatchedRef.current.has(`${sig.id}_TP${t.id}`));
-                if (justHit) {
-                  hitTargetsDispatchedRef.current.add(`${sig.id}_TP${justHit.id}`);
-                  sendTargetHitToTelegram(sig, justHit, config.telegramBotToken, config.telegramChatId)
-                    .then(res => {
-                      if (res.success) {
-                        setTelegramToast({
-                          message: `🎯 تم إرسال إشعار تحقيق الهدف ${justHit.label} لزوج ${sig.pair} إلى تيليجرام تلقائياً!`,
-                          type: 'success',
-                        });
-                        setTimeout(() => setTelegramToast(null), 5000);
-                      }
-                    })
-                    .catch(e => console.error('Telegram target hit dispatch error:', e));
-                }
-              }
-            }
-
-            // Recalculate next target
-            const nextIdx = updatedTargets.findIndex((t) => !t.hit);
-            const targetsWithNext = updatedTargets.map((t, idx) => ({
-              ...t,
-              isNext: idx === nextIdx,
-            }));
-
-            // Update live price history for chart
-            const history = sig.priceHistory ? [...sig.priceHistory] : [];
-            const nowTime = new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
-            const lastEntry = history[history.length - 1];
-            if (!lastEntry || Math.abs(lastEntry.price - livePrice) > 0.00001) {
-              if (history.length >= 35) history.shift();
-              history.push({ time: nowTime, price: livePrice });
-            }
-
-            return {
-              ...sig,
-              currentPrice: livePrice,
-              pnlPercent: Number(pnlPercent.toFixed(2)),
-              pnlPoints: Number(pnlPoints.toFixed(4)),
-              targets: targetsWithNext,
-              priceHistory: history,
-            };
-          }
-          return sig;
-        });
-      });
+      pendingPricesRef.current.set(symbol, livePrice);
     };
 
     const activeSymbols = liquidityPairs.length > 0 
@@ -322,20 +249,112 @@ export default function App() {
     return () => {
       stream.disconnect();
     };
-  }, [config.soundEnabled, liquidityPairs, scanBatchLimit]);
+  }, [liquidityPairs.length, scanBatchLimit]);
 
-  // Dynamically update WebSocket stream when signals or active coins change
+  // Throttled price flusher: runs once every 1000ms to update all signals in a single smooth batch
+  // This keeps the JavaScript main thread idle and responsive for instant chat typing and zero page freezing
   useEffect(() => {
-    if (priceStreamRef.current) {
-      const activeSymbols = signals.length > 0
-        ? Array.from(new Set(signals.map(s => s.pair)))
-        : (liquidityPairs.length > 0 ? liquidityPairs.slice(0, scanBatchLimit).map(p => p.symbol) : TOP_50_DEFAULT_PAIRS.slice(0, scanBatchLimit));
+    const timer = setInterval(() => {
+      if (pendingPricesRef.current.size === 0) return;
 
-      if (activeSymbols.length > 0) {
-        priceStreamRef.current.updateSymbols(activeSymbols);
-      }
-    }
-  }, [signals, liquidityPairs, scanBatchLimit]);
+      const updates = new Map(pendingPricesRef.current);
+      pendingPricesRef.current.clear();
+
+      setSignals((prevSignals) => {
+        let hasChanges = false;
+        const nowTime = new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
+
+        const updated = prevSignals.map((sig) => {
+          const livePrice = updates.get(sig.pair);
+          if (livePrice === undefined || Math.abs(livePrice - sig.currentPrice) < 0.000001) {
+            return sig;
+          }
+
+          hasChanges = true;
+
+          // Recalculate PnL
+          let pnlPercent = 0;
+          let pnlPoints = 0;
+          if (sig.direction === 'BUY') {
+            pnlPercent = ((livePrice - sig.entryPrice) / sig.entryPrice) * 100;
+            pnlPoints = livePrice - sig.entryPrice;
+          } else {
+            pnlPercent = ((sig.entryPrice - livePrice) / sig.entryPrice) * 100;
+            pnlPoints = sig.entryPrice - livePrice;
+          }
+
+          // Check Targets
+          let newTargetHit = false;
+          const updatedTargets = sig.targets.map((t) => {
+            let hit = t.hit;
+            if (!hit) {
+              if (sig.direction === 'BUY' && livePrice >= t.price) {
+                hit = true;
+                newTargetHit = true;
+              } else if (sig.direction === 'SELL' && livePrice <= t.price) {
+                hit = true;
+                newTargetHit = true;
+              }
+            }
+            return { ...t, hit };
+          });
+
+          // Celebration chime and auto-send alert to Telegram if a target was just hit
+          if (newTargetHit) {
+            if (config.soundEnabled) {
+              soundManager.playTargetHitAlert();
+            }
+
+            if (config.autoSendTargetHit && config.telegramBotToken && config.telegramChatId) {
+              const justHit = updatedTargets.find(t => t.hit && !hitTargetsDispatchedRef.current.has(`${sig.id}_TP${t.id}`));
+              if (justHit) {
+                hitTargetsDispatchedRef.current.add(`${sig.id}_TP${justHit.id}`);
+                sendTargetHitToTelegram(sig, justHit, config.telegramBotToken, config.telegramChatId)
+                  .then(res => {
+                    if (res.success) {
+                      setTelegramToast({
+                        message: `🎯 تم إرسال إشعار تحقيق الهدف ${justHit.label} لزوج ${sig.pair} إلى تيليجرام تلقائياً!`,
+                        type: 'success',
+                      });
+                      setTimeout(() => setTelegramToast(null), 5000);
+                    }
+                  })
+                  .catch(e => console.error('Telegram target hit dispatch error:', e));
+              }
+            }
+          }
+
+          // Recalculate next target
+          const nextIdx = updatedTargets.findIndex((t) => !t.hit);
+          const targetsWithNext = updatedTargets.map((t, idx) => ({
+            ...t,
+            isNext: idx === nextIdx,
+          }));
+
+          // Update live price history for chart
+          const history = sig.priceHistory ? [...sig.priceHistory] : [];
+          const lastEntry = history[history.length - 1];
+          if (!lastEntry || Math.abs(lastEntry.price - livePrice) > 0.00001) {
+            if (history.length >= 35) history.shift();
+            history.push({ time: nowTime, price: livePrice });
+          }
+
+          return {
+            ...sig,
+            currentPrice: livePrice,
+            pnlPercent: Number(pnlPercent.toFixed(2)),
+            pnlPoints: Number(pnlPoints.toFixed(4)),
+            targets: targetsWithNext,
+            priceHistory: history,
+          };
+        });
+
+        return hasChanges ? updated : prevSignals;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [config.soundEnabled, config.autoSendTargetHit, config.telegramBotToken, config.telegramChatId]);
 
   // Auto-refresh 60s countdown timer
   useEffect(() => {
@@ -355,17 +374,34 @@ export default function App() {
   }, [config.autoRefresh, config.refreshIntervalSeconds, executeMarketScan]);
 
   // Filtered signals for rendering with search and pair filters
-  const filteredSignals = signals.filter((s) => {
-    if (selectedPair !== 'ALL' && s.pair !== selectedPair) return false;
-    if (searchQuery.trim() && !s.pair.toLowerCase().includes(searchQuery.toLowerCase().trim())) return false;
-    if (directionFilter !== 'ALL' && s.direction !== directionFilter) return false;
-    if (onlyHighConfidence && s.score < 80) return false;
-    return true;
-  });
+  const filteredSignals = useMemo(() => {
+    return signals.filter((s) => {
+      if (selectedPair !== 'ALL' && s.pair !== selectedPair) return false;
+      if (searchQuery.trim() && !s.pair.toLowerCase().includes(searchQuery.toLowerCase().trim())) return false;
+      if (directionFilter !== 'ALL' && s.direction !== directionFilter) return false;
+      if (onlyHighConfidence && s.score < 80) return false;
+      return true;
+    });
+  }, [signals, selectedPair, searchQuery, directionFilter, onlyHighConfidence]);
 
-  const handleUpdateSignal = (updatedSignal: TradeSignal) => {
+  // Reset page to 1 whenever any filter or search query changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [selectedPair, searchQuery, directionFilter, onlyHighConfidence, scanBatchLimit, selectedTimeframe]);
+
+  const totalFiltered = filteredSignals.length;
+  const totalPages = Math.max(1, Math.ceil(totalFiltered / pageSize));
+  const safePage = Math.min(Math.max(1, currentPage), totalPages);
+
+  const paginatedSignals = useMemo(() => {
+    if (pageSize >= 50) return filteredSignals;
+    const start = (safePage - 1) * pageSize;
+    return filteredSignals.slice(start, start + pageSize);
+  }, [filteredSignals, safePage, pageSize]);
+
+  const handleUpdateSignal = useCallback((updatedSignal: TradeSignal) => {
     setSignals((prev) => prev.map((s) => (s.id === updatedSignal.id ? updatedSignal : s)));
-  };
+  }, []);
 
   // Open Python code modal for a given pair
   const openPythonModal = (pair: CryptoPair) => {
@@ -759,6 +795,43 @@ export default function App() {
                 <Flame className="w-3.5 h-3.5" />
                 <span>إشارات VIP فقط (&gt;80%)</span>
               </button>
+
+              {/* Speed Mode & On-Demand Charts Toggle */}
+              <button
+                type="button"
+                onClick={() => setGlobalChartsEnabled(!globalChartsEnabled)}
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-bold border transition-all ${
+                  globalChartsEnabled
+                    ? 'bg-purple-900/40 text-purple-300 border-purple-500/50 glow-purple'
+                    : 'bg-emerald-950/40 text-emerald-300 border-emerald-500/40 glow-green'
+                }`}
+                title="التحكم في سرعة وتحميل المخططات البيانية لتخفيف الموقع"
+              >
+                <Gauge className="w-3.5 h-3.5" />
+                <span>{globalChartsEnabled ? 'المخططات: معروضة للكل' : '⚡ وضع السرعة الفائقة (خفيف)'}</span>
+              </button>
+
+              {/* Page Size Selector */}
+              <div className="flex items-center gap-1 bg-slate-900 border border-slate-800 rounded-xl p-0.5 text-xs font-mono-numbers">
+                <span className="text-slate-400 text-[10px] px-1.5">عرض:</span>
+                {[10, 25, 50].map((size) => (
+                  <button
+                    key={size}
+                    type="button"
+                    onClick={() => {
+                      setPageSize(size);
+                      setCurrentPage(1);
+                    }}
+                    className={`px-2 py-0.5 rounded-lg text-xs font-bold transition-all ${
+                      pageSize === size
+                        ? 'bg-[#00f090] text-black shadow-sm font-black'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    {size === 50 ? 'الكل 50' : size}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 
@@ -848,15 +921,107 @@ export default function App() {
               </button>
             </div>
           ) : (
-            <div className="grid grid-cols-1 gap-6">
-              {filteredSignals.map((signal) => (
-                <VipSignalCard
-                  key={signal.id}
-                  signal={signal}
-                  config={config}
-                  onUpdateSignal={handleUpdateSignal}
-                />
-              ))}
+            <div className="space-y-6">
+              {/* Top Pagination Bar */}
+              {totalFiltered > pageSize && (
+                <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-xl bg-[#0c101a] border border-slate-800/80 font-mono-numbers text-xs">
+                  <div className="flex items-center gap-2 text-slate-300">
+                    <span className="w-2 h-2 rounded-full bg-[#00f090]" />
+                    <span>
+                      عرض الصفقات <strong className="text-white">{(safePage - 1) * pageSize + 1}</strong> -{' '}
+                      <strong className="text-white">{Math.min(safePage * pageSize, totalFiltered)}</strong> من إجمالي{' '}
+                      <strong className="text-[#00f090]">{totalFiltered}</strong> صفقة متاحة
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-1.5" dir="ltr">
+                    <button
+                      type="button"
+                      onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                      disabled={safePage <= 1}
+                      className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-300 hover:text-white disabled:opacity-30 disabled:pointer-events-none transition-all"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                      <span className="text-xs">السابق</span>
+                    </button>
+
+                    {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
+                      <button
+                        key={p}
+                        type="button"
+                        onClick={() => setCurrentPage(p)}
+                        className={`w-8 h-8 rounded-lg text-xs font-bold transition-all ${
+                          safePage === p
+                            ? 'bg-[#00f090] text-black shadow-md glow-green font-black'
+                            : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
+                        }`}
+                      >
+                        {p}
+                      </button>
+                    ))}
+
+                    <button
+                      type="button"
+                      onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                      disabled={safePage >= totalPages}
+                      className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-300 hover:text-white disabled:opacity-30 disabled:pointer-events-none transition-all"
+                    >
+                      <span className="text-xs">التالي</span>
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Signals Cards Grid */}
+              <div className="grid grid-cols-1 gap-6">
+                {paginatedSignals.map((signal, index) => (
+                  <VipSignalCard
+                    key={signal.id}
+                    signal={signal}
+                    config={config}
+                    onUpdateSignal={handleUpdateSignal}
+                    defaultShowChart={globalChartsEnabled || (safePage === 1 && index === 0)}
+                  />
+                ))}
+              </div>
+
+              {/* Bottom Pagination Bar */}
+              {totalFiltered > pageSize && (
+                <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-xl bg-[#0c101a] border border-slate-800/80 font-mono-numbers text-xs">
+                  <div className="text-slate-400">
+                    الصفحة <strong className="text-white">{safePage}</strong> من <strong className="text-white">{totalPages}</strong>
+                  </div>
+
+                  <div className="flex items-center gap-1.5" dir="ltr">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCurrentPage((p) => Math.max(1, p - 1));
+                        window.scrollTo({ top: 350, behavior: 'smooth' });
+                      }}
+                      disabled={safePage <= 1}
+                      className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-300 hover:text-white disabled:opacity-30 disabled:pointer-events-none transition-all"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                      <span className="text-xs">الصفحة السابقة</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCurrentPage((p) => Math.min(totalPages, p + 1));
+                        window.scrollTo({ top: 350, behavior: 'smooth' });
+                      }}
+                      disabled={safePage >= totalPages}
+                      className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-300 hover:text-white disabled:opacity-30 disabled:pointer-events-none transition-all"
+                    >
+                      <span className="text-xs">الصفحة التالية</span>
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </section>

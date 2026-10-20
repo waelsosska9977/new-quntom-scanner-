@@ -216,6 +216,9 @@ export async function sendChatToAiAnalyst(
 
   // Try CodeCraft API if Key is provided
   if (config.codeCraftApiKey && config.codeCraftApiKey.trim().length > 0) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
+
     try {
       const endpoint = config.codeCraftEndpoint || 'https://codecraftapi.com/v1/chat/completions';
       const model = config.codeCraftModel || 'gpt-4o-mini';
@@ -237,7 +240,10 @@ export async function sendChatToAiAnalyst(
           temperature: 0.4,
           max_tokens: 1000,
         }),
+        signal: controller.signal,
       });
+
+      clearTimeout(timeoutId);
 
       if (res.ok) {
         const data = await res.json();
@@ -247,7 +253,8 @@ export async function sendChatToAiAnalyst(
         }
       }
     } catch (err) {
-      console.warn('CodeCraft Chat error, falling back to institutional assistant:', err);
+      clearTimeout(timeoutId);
+      console.warn('CodeCraft Chat error/timeout, falling back to institutional assistant:', err);
     }
   }
 

@@ -65,6 +65,7 @@ export const AiChatbotModal: React.FC<AiChatbotModalProps> = ({
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -73,6 +74,10 @@ export const AiChatbotModal: React.FC<AiChatbotModalProps> = ({
   useEffect(() => {
     if (isOpen) {
       scrollToBottom();
+      const timer = setTimeout(() => {
+        inputRef.current?.focus();
+      }, 50);
+      return () => clearTimeout(timer);
     }
   }, [isOpen, messages]);
 
@@ -238,18 +243,26 @@ export const AiChatbotModal: React.FC<AiChatbotModalProps> = ({
           className="p-3 bg-[#0a0d16] border-t border-slate-800 flex items-center gap-2"
         >
           <input
+            ref={inputRef}
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                handleSendMessage();
+              }
+            }}
             placeholder="اكتب استفسارك هنا (مثال: ما هو هدف عملة SUI؟ أو ما أفضل فرصة؟)..."
             className="flex-1 bg-[#0f1422] border border-slate-800 rounded-xl py-2.5 px-3.5 text-xs text-white focus:outline-none focus:border-[#00f090]/60 transition-colors"
-            disabled={isLoading}
+            autoComplete="off"
           />
 
           <button
             type="submit"
             disabled={!input.trim() || isLoading}
-            className="p-2.5 rounded-xl bg-[#00f090] hover:bg-[#00f090]/90 text-black font-bold transition-all disabled:opacity-40 glow-green"
+            className="p-2.5 rounded-xl bg-[#00f090] hover:bg-[#00f090]/90 text-black font-bold transition-all disabled:opacity-40 glow-green cursor-pointer shrink-0"
+            title="إرسال"
           >
             {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
           </button>

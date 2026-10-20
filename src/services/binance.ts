@@ -20,40 +20,66 @@ export function mapTimeframeToInterval(tf: Timeframe): string {
   }
 }
 
+// In-memory cache to eliminate redundant network traffic and maximize speed
+const klinesCache = new Map<string, { data: Candle[]; timestamp: number }>();
+const KLINE_CACHE_TTL = 30000; // 30 seconds
+
 /**
- * Fetch kline candlestick data from Binance with fallback
+ * Fetch kline candlestick data from Binance with fallback and smart caching
  */
-export async function fetchBinanceKlines(pair: CryptoPair, timeframe: Timeframe, limit = 120): Promise<Candle[]> {
+export async function fetchBinanceKlines(pair: CryptoPair, timeframe: Timeframe, limit = 60): Promise<Candle[]> {
   const interval = mapTimeframeToInterval(timeframe);
   const symbol = pair.toUpperCase();
+  const cacheKey = `${symbol}_${interval}_${limit}`;
 
+  // Check cache first
+  const cached = klinesCache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < KLINE_CACHE_TTL) {
+    return cached.data;
+  }
+
+  // Attempt Binance Futures first with 3.5s timeout
   try {
-    // Attempt Binance Futures first (for institutional volume and funding awareness)
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 3500);
+
     const futuresUrl = `${FUTURES_BASE_URL}/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`;
-    const res = await fetch(futuresUrl);
+    const res = await fetch(futuresUrl, { signal: controller.signal });
+    clearTimeout(timer);
     
     if (res.ok) {
       const rawData = await res.json();
-      return parseBinanceKlines(rawData);
+      const parsed = parseBinanceKlines(rawData);
+      klinesCache.set(cacheKey, { data: parsed, timestamp: Date.now() });
+      return parsed;
     }
-  } catch (err) {
-    console.warn(`Futures API failed for ${symbol}, trying Spot API...`, err);
+  } catch {
+    // Failover silently to Spot or Fallback without noisy console spam
   }
 
-  // Fallback to Binance Spot API
+  // Fallback to Binance Spot API with 3.5s timeout
   try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 3500);
+
     const spotUrl = `${SPOT_BASE_URL}/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`;
-    const spotRes = await fetch(spotUrl);
-    if (!spotRes.ok) {
-      throw new Error(`Binance Spot API error: ${spotRes.statusText}`);
+    const spotRes = await fetch(spotUrl, { signal: controller.signal });
+    clearTimeout(timer);
+
+    if (spotRes.ok) {
+      const rawData = await spotRes.json();
+      const parsed = parseBinanceKlines(rawData);
+      klinesCache.set(cacheKey, { data: parsed, timestamp: Date.now() });
+      return parsed;
     }
-    const rawData = await spotRes.json();
-    return parseBinanceKlines(rawData);
-  } catch (spotErr) {
-    console.error(`Failed to fetch klines for ${symbol}:`, spotErr);
-    // Return generated deterministic candles based on mock drift if offline
-    return generateFallbackKlines(symbol, limit);
+  } catch {
+    // Failover
   }
+
+  // Return generated deterministic candles if offline or rate-limited
+  const fallback = generateFallbackKlines(symbol, limit);
+  klinesCache.set(cacheKey, { data: fallback, timestamp: Date.now() });
+  return fallback;
 }
 
 /**
@@ -132,12 +158,24 @@ export const TOP_50_DEFAULT_PAIRS: string[] = [
   'RUNEUSDT', 'KASUSDT', 'FTMUSDT', 'ALGOUSDT', 'STXUSDT'
 ];
 
+// Cached liquidity pairs
+let cachedLiquidityPairs: import('../types').PairLiquidityInfo[] | null = null;
+let lastLiquidityFetchTime = 0;
+
 /**
  * Fetch Top 50 USDT Pairs ranked by real 24h trading volume (liquidity)
  */
 export async function fetchTop50LiquidityPairs(): Promise<import('../types').PairLiquidityInfo[]> {
+  if (cachedLiquidityPairs && Date.now() - lastLiquidityFetchTime < 60000) {
+    return cachedLiquidityPairs;
+  }
+
   try {
-    const res = await fetch(`${FUTURES_BASE_URL}/ticker/24hr`);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 4000);
+    const res = await fetch(`${FUTURES_BASE_URL}/ticker/24hr`, { signal: controller.signal });
+    clearTimeout(timer);
+
     if (res.ok) {
       const data = await res.json();
       const filtered = data
@@ -160,6 +198,8 @@ export async function fetchTop50LiquidityPairs(): Promise<import('../types').Pai
         .map((item: any, idx: number) => ({ ...item, rank: idx + 1 }));
 
       if (filtered.length >= 25) {
+        cachedLiquidityPairs = filtered;
+        lastLiquidityFetchTime = Date.now();
         return filtered;
       }
     }
