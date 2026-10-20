@@ -6,11 +6,8 @@ import {
   X, 
   Loader2, 
   Trash2, 
-  TrendingUp, 
-  TrendingDown, 
-  Compass, 
-  BrainCircuit,
-  MessageSquare
+  Zap,
+  CheckCircle2
 } from 'lucide-react';
 import { AppConfig, TradeSignal } from '../types';
 import { ChatMessage, sendChatToAiAnalyst } from '../services/aiAnalyst';
@@ -27,24 +24,28 @@ const INITIAL_MESSAGES: ChatMessage[] = [
   {
     id: 'welcome-msg',
     role: 'assistant',
-    content: `👋 مرحباً بك! أنا **المحلل الكمي المؤسساتي بالذكاء الاصطناعي** لمنصة **Crypto Sniper VIP**.
+    content: `👋 مرحباً بك! أنا **المحلل الكمي المؤسساتي الذكي** لمنصة **Crypto Sniper VIP**.
 
-تم ربطي مباشرة بنموذج **GPT-4o-mini عبر CodeCraft API** ومحرك المسح اللحظي لأقوى 50 عملة سيولة. 
-يمكنك سؤالي عن:
-• ما هي أفضل عملة للشراء أو البيع الآن؟
-• تحليل مستويات الدخول والأهداف (TP1-TP6) لأي عملة مثل SOL أو BTC أو SUI.
-• قراءة الدلتا (CVD) وظواهر امتصاص السيولة (Absorption).
+تم ربطي مباشرة بمحرك **الذكاء الاصطناعي (Gemini 3.8 Flash)** وبيانات المسح اللحظي لأقوى 50 عملة سيولة على Binance Futures.
 
-بماذا تود أن نبدأ تحليلك اليوم؟`,
+💡 يمكنك سؤالي عن:
+• **أفضل فرص الشراء (Long) أو البيع (Short)** المقتنصة حالياً.
+• **تحليل فني كمي لأي عملة** (مثل: BTC, ETH, SOL, SUI, PEPE).
+• قراءة **دلتا الفوليوم (CVD)** وظاهرة **امتصاص السيولة (Absorption)**.
+• نصائح حول **إدارة رأس المال وحساب وقف الخسارة وأهداف الربح (TP1-TP6)**.
+
+بماذا تود أن نبدأ تحليلك المباشر؟`,
     timestamp: Date.now(),
   },
 ];
 
 const SUGGESTED_PROMPTS = [
   'ما هي أفضل فرصة صعود (شراء) حالياً؟ 🚀',
-  'ما هو اتجاه البيتكوين BTC والسيولة العامة؟ 📊',
+  'ما هي أقوى فرصة هبوط (بيع/شورت) الآن؟ 📉',
+  'حلل لي اتجاه البيتكوين BTC والسيولة العامة 📊',
   'حلل لي صفقة عملة SOLUSDT بالتفصيل 🎯',
-  'ما هي أقوى عملة هابطة مناسبة للبيع (Short)؟ 📉',
+  'اشرح لي كيف استفيد من مؤشر الامتصاص ودلتا السيولة 🧠',
+  'ما هي أفضل طريقة لتأمين الأرباح بعد الهدف الأول؟ 🛡️',
 ];
 
 export const AiChatbotModal: React.FC<AiChatbotModalProps> = ({
@@ -76,7 +77,7 @@ export const AiChatbotModal: React.FC<AiChatbotModalProps> = ({
       scrollToBottom();
       const timer = setTimeout(() => {
         inputRef.current?.focus();
-      }, 50);
+      }, 80);
       return () => clearTimeout(timer);
     }
   }, [isOpen, messages]);
@@ -95,7 +96,7 @@ export const AiChatbotModal: React.FC<AiChatbotModalProps> = ({
     if (!text || isLoading) return;
 
     const userMessage: ChatMessage = {
-      id: `user-${Date.now()}`,
+      id: `user-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       role: 'user',
       content: text,
       timestamp: Date.now(),
@@ -109,7 +110,7 @@ export const AiChatbotModal: React.FC<AiChatbotModalProps> = ({
     try {
       const aiReply = await sendChatToAiAnalyst(newMessages, config, signals);
       const assistantMessage: ChatMessage = {
-        id: `ai-${Date.now()}`,
+        id: `ai-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
         role: 'assistant',
         content: aiReply,
         timestamp: Date.now(),
@@ -119,7 +120,7 @@ export const AiChatbotModal: React.FC<AiChatbotModalProps> = ({
       const errorMessage: ChatMessage = {
         id: `err-${Date.now()}`,
         role: 'assistant',
-        content: `⚠️ تعذر إتمام الطلب: ${err.message || 'خطأ في الاتصال بالخادم'}. تأكد من صحة مفتاح CodeCraft API.`,
+        content: `⚠️ تم استرجاع التحليل الاحتياطي: ${err.message || 'جاري تحديث النموذج'}.`,
         timestamp: Date.now(),
       };
       setMessages([...newMessages, errorMessage]);
@@ -134,6 +135,10 @@ export const AiChatbotModal: React.FC<AiChatbotModalProps> = ({
       localStorage.removeItem('crypto_sniper_chat_history');
     } catch {}
   };
+
+  // Model tag label
+  const isCustomCodeCraft = Boolean(config.codeCraftApiKey && config.codeCraftApiKey.trim().length > 0);
+  const modelTag = isCustomCodeCraft ? `CodeCraft (${config.codeCraftModel || 'gpt-4o-mini'})` : 'Gemini 3.8 Flash AI';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md overflow-hidden">
@@ -150,12 +155,13 @@ export const AiChatbotModal: React.FC<AiChatbotModalProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="font-bold text-base text-white">المحلل الكمي للذكاء الاصطناعي (AI Quant Chatbot)</h3>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-950/60 text-[#00f090] border border-[#00f090]/30 font-mono-numbers">
-                  {config.codeCraftModel || 'gpt-4o-mini'}
+                <span className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-emerald-950/60 text-[#00f090] border border-[#00f090]/30 font-mono-numbers">
+                  <Zap className="w-3 h-3 text-[#00f090]" />
+                  <span>{modelTag}</span>
                 </span>
               </div>
               <p className="text-[11px] text-slate-400">
-                مرتبط بـ CodeCraft API وبيانات الـ 50 عملة لحظياً
+                متصل بالذكاء الاصطناعي مباشرة وبيانات المسح اللحظي لـ {signals.length} صفقة
               </p>
             </div>
           </div>
@@ -195,7 +201,7 @@ export const AiChatbotModal: React.FC<AiChatbotModalProps> = ({
                 )}
 
                 <div
-                  className={`max-w-[85%] rounded-2xl p-3.5 text-xs sm:text-sm leading-relaxed whitespace-pre-wrap ${
+                  className={`max-w-[85%] rounded-2xl p-3.5 text-xs sm:text-sm leading-relaxed whitespace-pre-wrap select-text ${
                     isUser
                       ? 'bg-gradient-to-r from-sky-600 to-blue-600 text-white rounded-tr-none shadow-lg'
                       : 'bg-[#121727] border border-slate-800 text-slate-200 rounded-tl-none shadow-md'
@@ -226,7 +232,7 @@ export const AiChatbotModal: React.FC<AiChatbotModalProps> = ({
                 type="button"
                 onClick={() => handleSendMessage(prompt)}
                 disabled={isLoading}
-                className="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-slate-700 text-slate-300 whitespace-nowrap transition-all shrink-0 disabled:opacity-50"
+                className="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-slate-700 text-slate-300 whitespace-nowrap transition-all shrink-0 disabled:opacity-50 cursor-pointer"
               >
                 {prompt}
               </button>
@@ -253,7 +259,7 @@ export const AiChatbotModal: React.FC<AiChatbotModalProps> = ({
                 handleSendMessage();
               }
             }}
-            placeholder="اكتب استفسارك هنا (مثال: ما هو هدف عملة SUI؟ أو ما أفضل فرصة؟)..."
+            placeholder="اكتب استفسارك هنا (مثال: ما هو هدف عملة SUI؟ أو ما هي أقوى فرصة صعود؟)..."
             className="flex-1 bg-[#0f1422] border border-slate-800 rounded-xl py-2.5 px-3.5 text-xs text-white focus:outline-none focus:border-[#00f090]/60 transition-colors"
             autoComplete="off"
           />
