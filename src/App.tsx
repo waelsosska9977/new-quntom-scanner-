@@ -25,7 +25,8 @@ import {
   X,
   Search,
   Coins,
-  BarChart2
+  BarChart2,
+  MessageSquare
 } from 'lucide-react';
 import { AppConfig, CryptoPair, PairLiquidityInfo, Timeframe, TradeSignal } from './types';
 import { fetchBinanceKlines, BinancePriceStream, fetchTop50LiquidityPairs, TOP_50_DEFAULT_PAIRS } from './services/binance';
@@ -33,6 +34,8 @@ import { generateQuantitativeSignal } from './services/quantEngine';
 import { generateAiTradeAnalysis } from './services/aiAnalyst';
 import { sendSignalToTelegram, sendTargetHitToTelegram } from './services/telegram';
 import { VipSignalCard } from './components/VipSignalCard';
+import { MarketOverviewCard } from './components/MarketOverviewCard';
+import { AiChatbotModal } from './components/AiChatbotModal';
 import { ApiConfigModal } from './components/ApiConfigModal';
 import { VercelExportModal } from './components/VercelExportModal';
 import { PythonCodeModal } from './components/PythonCodeModal';
@@ -88,6 +91,7 @@ export default function App() {
   const [isConfigOpen, setIsConfigOpen] = useState(false);
   const [isVercelExportOpen, setIsVercelExportOpen] = useState(false);
   const [isPythonModalOpen, setIsPythonModalOpen] = useState(false);
+  const [isChatOpen, setIsChatOpen] = useState(false);
   const [activePythonPair, setActivePythonPair] = useState<CryptoPair>('SOLUSDT');
   const [isBroadcastingAll, setIsBroadcastingAll] = useState(false);
   const [telegramToast, setTelegramToast] = useState<{ message: string; type: 'success' | 'info' | 'error' } | null>(null);
@@ -520,6 +524,17 @@ export default function App() {
               <span className="hidden sm:inline">مسح الآن</span>
             </button>
 
+            {/* AI Chatbot Header Button */}
+            <button
+              type="button"
+              onClick={() => setIsChatOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-500/20 via-[#00f090]/25 to-purple-500/20 hover:from-emerald-500/30 hover:to-purple-500/30 text-[#00f090] border border-[#00f090]/40 text-xs font-bold transition-all glow-green shadow-sm"
+              title="فتح شات الذكاء الاصطناعي المؤسساتي"
+            >
+              <MessageSquare className="w-4 h-4 text-[#00f090]" />
+              <span className="hidden sm:inline">شات الذكاء الاصطناعي 💬</span>
+            </button>
+
             {/* Vercel 1-Click Export Button */}
             <button
               type="button"
@@ -547,6 +562,16 @@ export default function App() {
 
       {/* Main Content Area */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-6">
+        {/* 1. Top VIP Card: Available Trades Radar (Bullish ↗ vs Bearish ↘) */}
+        <MarketOverviewCard
+          signals={signals}
+          onSelectPair={(pair) => {
+            setSelectedPair(pair);
+          }}
+          onOpenChat={() => setIsChatOpen(true)}
+          onBroadcastTelegram={handleBroadcastAllSignals}
+        />
+
         {/* Banner: Institutional Metrics Bar */}
         <section className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
           <div className="p-4 rounded-2xl bg-gradient-to-br from-[#121626] to-[#0c0f1a] border border-slate-800 shadow-lg text-right">
@@ -856,12 +881,37 @@ export default function App() {
         </div>
       </footer>
 
+      {/* Floating AI Chatbot Action Button (Bottom Left) */}
+      <button
+        type="button"
+        onClick={() => setIsChatOpen(true)}
+        className="fixed bottom-6 left-6 z-40 flex items-center gap-2.5 px-4 py-3 rounded-full bg-gradient-to-r from-[#00f090] to-emerald-400 text-black font-black text-xs shadow-2xl shadow-[#00f090]/40 hover:scale-105 active:scale-95 transition-all glow-green cursor-pointer"
+        title="المحلل الذكي - اضغط للتحدث مع الذكاء الاصطناعي"
+      >
+        <div className="relative">
+          <Bot className="w-5 h-5 text-black" />
+          <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-purple-600 animate-ping" />
+        </div>
+        <span className="font-bold">المحلل الذكي (AI Chat)</span>
+      </button>
+
       {/* Modals */}
       <ApiConfigModal
         isOpen={isConfigOpen}
         onClose={() => setIsConfigOpen(false)}
         config={config}
         onSaveConfig={handleSaveConfig}
+      />
+
+      <AiChatbotModal
+        isOpen={isChatOpen}
+        onClose={() => setIsChatOpen(false)}
+        config={config}
+        signals={signals}
+        onSelectPair={(pair) => {
+          setSelectedPair(pair);
+          setIsChatOpen(false);
+        }}
       />
 
       <VercelExportModal
