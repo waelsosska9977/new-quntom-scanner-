@@ -8,18 +8,19 @@ import {
   Send, 
   BrainCircuit, 
   CheckCircle, 
-  Radio, 
   Clock, 
   Flame, 
   ChevronDown, 
   ChevronUp, 
   Sparkles, 
-  Layers, 
   Loader2,
-  Percent,
+  Copy,
   Check,
   Circle,
-  BarChart3
+  BarChart3,
+  Layers,
+  ArrowUpRight,
+  ArrowDownRight
 } from 'lucide-react';
 import { AppConfig, TradeSignal } from '../types';
 import { sendSignalToTelegram } from '../services/telegram';
@@ -45,11 +46,38 @@ const VipSignalCardComponent: React.FC<VipSignalCardProps> = ({
   const [isSendingTelegram, setIsSendingTelegram] = useState(false);
   const [telegramStatus, setTelegramStatus] = useState<{ success?: boolean; text?: string } | null>(null);
   const [isRefreshingAi, setIsRefreshingAi] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const isBuy = signal.direction === 'BUY';
   const hitTargets = signal.targets.filter(t => t.hit).length;
   const totalTargets = signal.targets.length || 6;
-  const progressRatio = (hitTargets / totalTargets) * 100;
+  const progressRatio = Math.round((hitTargets / totalTargets) * 100);
+
+  // 1-Click Copy Signal Details to Clipboard for traders
+  const handleCopySignal = () => {
+    const directionArabic = isBuy ? 'شراء ↗ (LONG)' : 'بيع ↘ (SHORT)';
+    const targetsText = signal.targets
+      .map(t => `${t.label}: ${t.price} (+${t.targetPct}%) ${t.hit ? '✔ (تم)' : ''}`)
+      .join('\n');
+
+    const copyText = `🎯 توصية VIP: ${signal.pair}
+الاتجاه: ${directionArabic}
+الفريم: ${signal.timeframe.toUpperCase()}
+قوة الإشارة: ${signal.score}/100
+
+سعر الدخول: ${signal.entryPrice}
+وقف الخسارة: ${signal.stopLoss} (${isBuy ? `-${(((signal.entryPrice - signal.stopLoss) / signal.entryPrice) * 100).toFixed(1)}%` : `+${(((signal.stopLoss - signal.entryPrice) / signal.entryPrice) * 100).toFixed(1)}%`})
+
+الأهداف:
+${targetsText}
+
+نسبة R:R: 1:${signal.riskRewardRatio}`;
+
+    navigator.clipboard.writeText(copyText).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2500);
+    });
+  };
 
   // Handle Telegram 1-click send
   const handleSendTelegram = async () => {
@@ -86,208 +114,198 @@ const VipSignalCardComponent: React.FC<VipSignalCardProps> = ({
 
   return (
     <div 
-      className="relative rounded-[18px] bg-gradient-to-b from-[#111624] via-[#0d101a] to-[#0a0c13] border border-slate-800/80 p-5 sm:p-6 transition-all duration-300 hover:border-slate-700/80 shadow-2xl glow-card group overflow-hidden"
+      className="rounded-2xl bg-[#111827] border border-slate-800 p-5 sm:p-6 transition-all duration-200 hover:border-slate-700 shadow-md relative"
       dir="rtl"
     >
-      {/* Decorative ambient neon backlight */}
-      <div 
-        className={`absolute -top-24 -right-24 w-56 h-56 rounded-full blur-3xl pointer-events-none opacity-20 transition-opacity ${
-          isBuy ? 'bg-[#00f090]' : 'bg-[#ff3366]'
-        }`} 
-      />
-      <div className="absolute -bottom-24 -left-24 w-48 h-48 rounded-full blur-3xl pointer-events-none opacity-15 bg-purple-600" />
-
-      {/* 1. Header Row */}
-      <div className="relative flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-slate-800/70">
-        <div className="flex items-center gap-3">
-          {/* Direction Badge */}
+      {/* 1. Header Row: High Clarity, Scannable at a Glance */}
+      <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-slate-800">
+        {/* Left: Direction + Pair Name + Timeframe */}
+        <div className="flex items-center flex-wrap gap-2.5">
+          {/* Direction Tag */}
           <div
-            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl font-black text-xs sm:text-sm tracking-wide ${
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold text-xs sm:text-sm ${
               isBuy
-                ? 'bg-[#00f090]/15 text-[#00f090] border border-[#00f090]/40 glow-green'
-                : 'bg-[#ff3366]/15 text-[#ff3366] border border-[#ff3366]/40 glow-red'
+                ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                : 'bg-rose-500/15 text-rose-400 border border-rose-500/30'
             }`}
           >
-            {isBuy ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
-            <span>{isBuy ? 'شراء ↗ BUY' : 'بيع ↘ SELL'}</span>
+            {isBuy ? <ArrowUpRight className="w-4 h-4 stroke-[2.5]" /> : <ArrowDownRight className="w-4 h-4 stroke-[2.5]" />}
+            <span>{isBuy ? 'صفقة شراء ↗ BUY' : 'صفقة بيع ↘ SELL'}</span>
           </div>
 
           {/* Timeframe Tag */}
-          <span className="font-mono-numbers text-xs font-semibold px-2.5 py-1 rounded-lg bg-slate-800/80 text-slate-300 border border-slate-700/60">
+          <span className="font-mono-numbers text-xs font-semibold px-2.5 py-1 rounded-lg bg-slate-800 text-slate-300 border border-slate-700/60">
             {signal.timeframe.toUpperCase()}
           </span>
 
           {/* Pair Name */}
-          <div className="flex items-center gap-2">
-            <h3 className="text-xl sm:text-2xl font-black text-white tracking-wider font-mono-numbers">
+          <div className="flex items-center gap-2 mr-1">
+            <h3 className="text-xl sm:text-2xl font-black text-white font-mono-numbers tracking-tight">
               {signal.pair}
             </h3>
-            <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
           </div>
         </div>
 
-        {/* VIP Premium Badge */}
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-gradient-to-r from-amber-500/20 via-yellow-500/10 to-amber-500/20 text-[#ffb800] border border-[#ffb800]/40 glow-gold text-xs font-bold shadow-lg">
-            <Award className="w-4 h-4 text-[#ffb800]" />
-            <span className="tracking-wider">VIP PREMIUM 🏆</span>
+        {/* Right: Live Price & Signal Score */}
+        <div className="flex items-center gap-3">
+          {/* Live Price Pill */}
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="text-[11px] text-slate-400">السعر المباشر:</span>
+            <span className="font-mono-numbers font-bold text-white text-xs sm:text-sm">
+              {signal.currentPrice}
+            </span>
+            <span
+              className={`font-mono-numbers text-xs font-bold ${
+                signal.pnlPercent >= 0 ? 'text-emerald-400' : 'text-rose-400'
+              }`}
+            >
+              {signal.pnlPercent >= 0 ? `+${signal.pnlPercent}%` : `${signal.pnlPercent}%`}
+            </span>
+          </div>
+
+          {/* Signal Score Badge */}
+          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/10 text-amber-300 border border-amber-500/30 text-xs font-bold">
+            <Flame className="w-3.5 h-3.5 text-amber-400" />
+            <span className="font-mono-numbers">{signal.score}/100</span>
           </div>
         </div>
       </div>
 
-      {/* 2. Metrics Row (Triple Metric: Entry, Stop Loss, Signal Score) */}
-      <div className="relative grid grid-cols-1 sm:grid-cols-3 gap-3 my-4">
+      {/* 2. Core Trade Plan: 3 Clear Pillars (Entry, Stop Loss, Risk:Reward) */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 my-4">
         {/* Entry Price */}
-        <div className="p-3.5 rounded-xl bg-[#0b0e17] border border-slate-800/90 flex items-center justify-between">
+        <div className="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-lg bg-emerald-500/10 text-[#00f090] border border-[#00f090]/20">
+            <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
               <Target className="w-4 h-4" />
             </div>
             <div>
-              <span className="text-[11px] text-slate-400 block font-medium">سعر الدخول (Entry)</span>
+              <span className="text-[11px] text-slate-400 block font-medium">سعر الدخول المقترح</span>
               <span className="text-base sm:text-lg font-black text-white font-mono-numbers tracking-tight">
                 {signal.entryPrice}
               </span>
             </div>
           </div>
-          <span className="text-[10px] text-slate-500 font-mono-numbers">USDT</span>
+          <span className="text-[10px] text-slate-400 font-mono-numbers">USDT</span>
         </div>
 
         {/* Stop Loss (SL) */}
-        <div className="p-3.5 rounded-xl bg-[#0b0e17] border border-slate-800/90 flex items-center justify-between">
+        <div className="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-lg bg-rose-500/10 text-[#ff3366] border border-[#ff3366]/20">
+            <div className="p-2 rounded-lg bg-rose-500/10 text-rose-400 border border-rose-500/20">
               <ShieldAlert className="w-4 h-4" />
             </div>
             <div>
               <span className="text-[11px] text-slate-400 block font-medium">وقف الخسارة (SL)</span>
-              <span className="text-base sm:text-lg font-black text-[#ff3366] font-mono-numbers tracking-tight">
+              <span className="text-base sm:text-lg font-black text-rose-400 font-mono-numbers tracking-tight">
                 {signal.stopLoss}
               </span>
             </div>
           </div>
-          <span className="text-[10px] text-rose-500/70 font-mono-numbers">
-            {isBuy ? `-${(((signal.entryPrice - signal.stopLoss) / signal.entryPrice) * 100).toFixed(1)}%` : `+${(((signal.stopLoss - signal.entryPrice) / signal.entryPrice) * 100).toFixed(1)}%`}
+          <span className="text-xs font-mono-numbers font-semibold text-rose-400 bg-rose-500/10 px-2 py-0.5 rounded-md">
+            {isBuy 
+              ? `-${(((signal.entryPrice - signal.stopLoss) / signal.entryPrice) * 100).toFixed(1)}%` 
+              : `+${(((signal.stopLoss - signal.entryPrice) / signal.entryPrice) * 100).toFixed(1)}%`}
           </span>
         </div>
 
-        {/* Signal Score */}
-        <div className="p-3.5 rounded-xl bg-[#0b0e17] border border-[#ffb800]/20 flex items-center justify-between glow-gold/40">
+        {/* Risk / Reward & Targets Count */}
+        <div className="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-lg bg-amber-500/10 text-[#ffb800] border border-[#ffb800]/30">
-              <Flame className="w-4 h-4" />
+            <div className="p-2 rounded-lg bg-amber-500/10 text-amber-300 border border-amber-500/20">
+              <Award className="w-4 h-4" />
             </div>
             <div>
-              <span className="text-[11px] text-slate-400 block font-medium">قوة الإشارة (Score)</span>
-              <div className="flex items-center gap-2">
-                <span className="text-base sm:text-lg font-black text-[#ffb800] font-mono-numbers">
-                  {signal.score} <span className="text-xs text-slate-400 font-normal">/ 100</span>
-                </span>
-              </div>
+              <span className="text-[11px] text-slate-400 block font-medium">نسبة العائد إلى المخاطرة (R:R)</span>
+              <span className="text-base sm:text-lg font-black text-amber-300 font-mono-numbers">
+                1 : {signal.riskRewardRatio}
+              </span>
             </div>
           </div>
-          {/* Glowing indicator dots */}
-          <div className="flex items-center gap-1">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_6px_#00f090]" />
-            <span className="w-2 h-2 rounded-full bg-amber-400 shadow-[0_0_6px_#ffb800]" />
-            <span className="w-2 h-2 rounded-full bg-purple-400 shadow-[0_0_6px_#a855f7]" />
-          </div>
+          <span className="text-[11px] font-mono-numbers text-slate-300 bg-slate-800 px-2 py-0.5 rounded-md">
+            {hitTargets}/{totalTargets} أهداف
+          </span>
         </div>
       </div>
 
-      {/* 3. Real-time Progress & Profit Bar */}
-      <div className="relative p-3.5 rounded-xl bg-[#0b0e17]/80 border border-slate-800/80 mb-4 space-y-2">
-        <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-          <div className="flex items-center gap-2">
-            <span className="text-slate-400">السعر اللحظي (Live):</span>
-            <span className="font-mono-numbers font-bold text-white text-sm">
-              {signal.currentPrice}
+      {/* 3. Progress Bar toward full Targets */}
+      <div className="p-3 rounded-xl bg-slate-900/50 border border-slate-800/80 mb-4">
+        <div className="flex items-center justify-between text-xs mb-1.5 font-medium">
+          <div className="flex items-center gap-1.5 text-slate-300">
+            <span className="text-slate-400">تقدم الصفقة:</span>
+            <span className="font-bold text-white font-mono-numbers">
+              {hitTargets} من {totalTargets} أهداف تحققت ({progressRatio}%)
             </span>
           </div>
 
-          <div className="flex items-center gap-3">
-            {/* PnL Counter */}
-            <div
-              className={`flex items-center gap-1 font-mono-numbers font-bold text-xs sm:text-sm ${
-                signal.pnlPercent >= 0 ? 'text-[#00f090]' : 'text-[#ff3366]'
-              }`}
-            >
-              <span>{signal.pnlPercent >= 0 ? `+${signal.pnlPoints} نقطة` : `${signal.pnlPoints} نقطة`}</span>
-              <span>/</span>
-              <span>{signal.pnlPercent >= 0 ? `+${signal.pnlPercent}%` : `${signal.pnlPercent}%`}</span>
-            </div>
-
-            {/* Target Ratio */}
-            <div className="flex items-center gap-1 font-mono-numbers font-semibold text-slate-300 bg-slate-800/80 px-2 py-0.5 rounded-md border border-slate-700/60">
-              <span className="text-xs">الأهداف المحققة:</span>
-              <span className="text-[#00f090] font-bold">{hitTargets}</span>
-              <span className="text-slate-500">/</span>
-              <span>{totalTargets}</span>
-            </div>
+          <div className="flex items-center gap-2 font-mono-numbers text-xs">
+            <span className="text-slate-400">الربح اللحظي:</span>
+            <span className={`font-bold ${signal.pnlPercent >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+              {signal.pnlPercent >= 0 ? `+${signal.pnlPoints} نقطة (+${signal.pnlPercent}%)` : `${signal.pnlPoints} نقطة (${signal.pnlPercent}%)`}
+            </span>
           </div>
         </div>
 
-        {/* Dynamic Neon Progress Bar */}
-        <div className="relative w-full h-2.5 bg-slate-900 rounded-full overflow-hidden border border-slate-800">
+        <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
           <div
-            className="h-full bg-gradient-to-r from-emerald-500 via-[#00f090] to-purple-500 rounded-full transition-all duration-500 shadow-[0_0_12px_rgba(0,240,144,0.6)]"
-            style={{ width: `${Math.min(100, Math.max(5, progressRatio))}%` }}
+            className={`h-full rounded-full transition-all duration-300 ${
+              isBuy ? 'bg-emerald-500' : 'bg-rose-500'
+            }`}
+            style={{ width: `${Math.min(100, Math.max(hitTargets > 0 ? progressRatio : 4, 4))}%` }}
           />
         </div>
       </div>
 
-      {/* 4. Real-time Line Chart (Recharts) */}
-      {showChart && <SignalChart signal={signal} />}
+      {/* 4. Real-time Chart (Optional, Toggleable) */}
+      {showChart && (
+        <div className="mb-4">
+          <SignalChart signal={signal} />
+        </div>
+      )}
 
-      {/* 5. Interactive TP Targets Grid (6 Progressive Targets TP1 - TP6) */}
-      <div className="relative mb-4">
-        <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-          <div className="flex items-center gap-2.5">
-            <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
-              <Target className="w-3.5 h-3.5 text-[#00f090]" />
-              شبكة الأهداف التفاعلية (TP Targets Grid):
-            </span>
-            <button
-              type="button"
-              onClick={() => setShowChart(!showChart)}
-              className={`flex items-center gap-1.5 px-2 py-0.5 rounded-lg text-[10px] font-semibold border transition-all ${
-                showChart
-                  ? 'bg-purple-950/40 text-purple-300 border-purple-500/40 glow-purple'
-                  : 'bg-slate-900/80 text-slate-400 border-slate-700/60 hover:text-white'
-              }`}
-            >
-              <BarChart3 className="w-3 h-3 text-purple-400" />
-              <span>{showChart ? 'إخفاء المخطط' : 'عرض المخطط البياني'}</span>
-            </button>
-          </div>
-          <span className="text-[11px] text-slate-500 font-mono-numbers">
-            R:R Ratio 1:{signal.riskRewardRatio}
+      {/* 5. Targets Grid (TP1 - TP6): Clean, Organized, Intuitive */}
+      <div className="mb-4">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+            <Target className="w-3.5 h-3.5 text-emerald-400" />
+            أهداف جني الأرباح (Take Profit Targets):
           </span>
+          <button
+            type="button"
+            onClick={() => setShowChart(!showChart)}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-colors"
+          >
+            <BarChart3 className="w-3.5 h-3.5 text-slate-400" />
+            <span>{showChart ? 'إخفاء الشارت' : 'عرض الشارت'}</span>
+          </button>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
           {signal.targets.map((target) => {
-            const profitStr = target.profitAmount !== undefined ? `+${target.profitAmount}` : `+${Math.abs(target.price - signal.entryPrice).toFixed(4)}`;
+            const profitStr = target.profitAmount !== undefined 
+              ? `+${target.profitAmount}` 
+              : `+${Math.abs(target.price - signal.entryPrice).toFixed(4)}`;
 
             if (target.hit) {
-              // 1. Hit Target: Dark neon green card + checkmark + price + "تم تحقيقه"
+              // 1. Hit Target: Clean soft green card
               return (
                 <div
                   key={target.id}
-                  className="p-2.5 rounded-xl bg-[#00f090]/10 border border-[#00f090]/40 text-right glow-green/40 transition-all"
+                  className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-right transition-all"
                 >
-                  <div className="flex items-center justify-between text-[11px] font-bold text-[#00f090] mb-1">
+                  <div className="flex items-center justify-between text-[11px] font-bold text-emerald-400 mb-1">
                     <span>{target.label}</span>
                     <Check className="w-3.5 h-3.5 stroke-[3]" />
                   </div>
-                  <div className="font-mono-numbers text-xs font-bold text-white tracking-tight">
+                  <div className="font-mono-numbers text-xs font-bold text-white">
                     {target.price}
                   </div>
-                  <div className="flex items-center justify-between text-[10px] font-mono-numbers text-emerald-400 font-semibold mt-0.5">
+                  <div className="flex items-center justify-between text-[10px] font-mono-numbers text-emerald-300 font-semibold mt-1">
                     <span>{profitStr}</span>
                     <span>+{target.targetPct}%</span>
                   </div>
-                  <div className="text-[9px] text-[#00f090] font-medium mt-0.5">
+                  <div className="text-[10px] text-emerald-400 font-medium mt-1">
                     تم تحقيقه ✔
                   </div>
                 </div>
@@ -295,49 +313,49 @@ const VipSignalCardComponent: React.FC<VipSignalCardProps> = ({
             }
 
             if (target.isNext) {
-              // 2. Next Active Target: Glowing pulsing neon purple border + price + "الهدف التالي"
+              // 2. Next Active Target: Highlighted in soft blue/purple
               return (
                 <div
                   key={target.id}
-                  className="p-2.5 rounded-xl bg-purple-950/30 border-2 border-[#a855f7] text-right glow-purple animate-pulse-subtle transition-all"
+                  className="p-2.5 rounded-xl bg-sky-500/10 border-2 border-sky-400/60 text-right transition-all"
                 >
-                  <div className="flex items-center justify-between text-[11px] font-bold text-purple-300 mb-1">
+                  <div className="flex items-center justify-between text-[11px] font-bold text-sky-300 mb-1">
                     <span>{target.label}</span>
-                    <span className="w-2 h-2 rounded-full bg-[#a855f7] animate-ping" />
+                    <span className="w-2 h-2 rounded-full bg-sky-400 animate-pulse" />
                   </div>
-                  <div className="font-mono-numbers text-xs font-bold text-white tracking-tight">
+                  <div className="font-mono-numbers text-xs font-bold text-white">
                     {target.price}
                   </div>
-                  <div className="flex items-center justify-between text-[10px] font-mono-numbers text-purple-300 font-bold mt-0.5">
+                  <div className="flex items-center justify-between text-[10px] font-mono-numbers text-sky-300 font-bold mt-1">
                     <span>{profitStr}</span>
                     <span>+{target.targetPct}%</span>
                   </div>
-                  <div className="text-[9px] text-purple-300 font-bold mt-0.5">
-                    الهدف التالي ⚡
+                  <div className="text-[10px] text-sky-400 font-bold mt-1">
+                    الهدف القادم 🎯
                   </div>
                 </div>
               );
             }
 
-            // 3. Pending Targets: Translucent gray + circle + price + "بانتظار الوصول"
+            // 3. Pending Targets: Clean slate muted
             return (
               <div
                 key={target.id}
-                className="p-2.5 rounded-xl bg-slate-900/40 border border-slate-800/60 text-right text-slate-400 transition-all opacity-75 hover:opacity-100"
+                className="p-2.5 rounded-xl bg-slate-900/60 border border-slate-800 text-right text-slate-400 transition-all"
               >
                 <div className="flex items-center justify-between text-[11px] font-medium text-slate-400 mb-1">
                   <span>{target.label}</span>
-                  <Circle className="w-3 h-3 text-slate-500" />
+                  <Circle className="w-2.5 h-2.5 text-slate-600" />
                 </div>
-                <div className="font-mono-numbers text-xs font-bold text-slate-300 tracking-tight">
+                <div className="font-mono-numbers text-xs font-semibold text-slate-200">
                   {target.price}
                 </div>
-                <div className="flex items-center justify-between text-[10px] font-mono-numbers text-slate-400 mt-0.5">
+                <div className="flex items-center justify-between text-[10px] font-mono-numbers text-slate-400 mt-1">
                   <span>{profitStr}</span>
-                  <span className="text-slate-300 font-medium">+{target.targetPct}%</span>
+                  <span className="text-slate-300">+{target.targetPct}%</span>
                 </div>
-                <div className="text-[9px] text-slate-500 mt-0.5">
-                  بانتظار الوصول ○
+                <div className="text-[10px] text-slate-500 mt-1">
+                  قيد المراقبة
                 </div>
               </div>
             );
@@ -345,8 +363,8 @@ const VipSignalCardComponent: React.FC<VipSignalCardProps> = ({
         </div>
       </div>
 
-      {/* 5. Institutional AI Trade Thesis Box */}
-      <div className="relative mb-4 rounded-xl bg-[#0c101a] border border-slate-800/90 overflow-hidden">
+      {/* 6. Collapsible Institutional AI Thesis */}
+      <div className="mb-4 rounded-xl bg-slate-900/80 border border-slate-800 overflow-hidden">
         <div
           onClick={() => setIsAiExpanded(!isAiExpanded)}
           onKeyDown={(e) => {
@@ -357,15 +375,19 @@ const VipSignalCardComponent: React.FC<VipSignalCardProps> = ({
           }}
           role="button"
           tabIndex={0}
-          className="w-full px-4 py-3 bg-gradient-to-r from-slate-900/90 via-[#101422] to-slate-900/90 flex items-center justify-between text-right border-b border-slate-800/80 hover:bg-slate-800/40 transition-colors cursor-pointer select-none"
+          className="w-full px-4 py-2.5 bg-slate-900/90 flex items-center justify-between text-right border-b border-slate-800/80 hover:bg-slate-850 transition-colors cursor-pointer select-none"
         >
           <div className="flex items-center gap-2">
-            <div className="p-1.5 rounded-lg bg-emerald-500/10 text-[#00f090] border border-[#00f090]/30">
-              <BrainCircuit className="w-4 h-4" />
+            <div className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+              <BrainCircuit className="w-3.5 h-3.5" />
             </div>
             <div>
-              <span className="text-xs font-bold text-white block">صندوق تحليل الذكاء الاصطناعي (AI Trade Thesis)</span>
-              <span className="text-[10px] text-slate-400">تقييم الدلتا، الامتصاص، مؤشر RSI وتدفق السيولة المؤسساتي</span>
+              <span className="text-xs font-bold text-slate-200 block">
+                تحليل الذكاء الاصطناعي والمؤشرات الكمية (AI Analysis)
+              </span>
+              <span className="text-[10px] text-slate-400">
+                تقييم السيولة، الامتصاص، RSI والـ CVD
+              </span>
             </div>
           </div>
 
@@ -377,10 +399,10 @@ const VipSignalCardComponent: React.FC<VipSignalCardProps> = ({
                 handleRegenerateAi();
               }}
               disabled={isRefreshingAi}
-              className="p-1 rounded text-slate-400 hover:text-[#00f090] transition-colors"
-              title="إعادة توليد التحليل"
+              className="p-1 rounded text-slate-400 hover:text-emerald-400 transition-colors"
+              title="إعادة فحص الذكاء الاصطناعي"
             >
-              {isRefreshingAi ? <Loader2 className="w-3.5 h-3.5 animate-spin text-[#00f090]" /> : <Sparkles className="w-3.5 h-3.5" />}
+              {isRefreshingAi ? <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-400" /> : <Sparkles className="w-3.5 h-3.5" />}
             </button>
             {isAiExpanded ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
           </div>
@@ -389,62 +411,77 @@ const VipSignalCardComponent: React.FC<VipSignalCardProps> = ({
         {isAiExpanded && (
           <div className="p-4 space-y-3 text-xs leading-relaxed">
             {/* Summary */}
-            <div className="p-2.5 rounded-lg bg-emerald-950/20 border border-emerald-900/40 text-emerald-200">
+            <div className="p-3 rounded-lg bg-slate-950 border border-slate-800 text-slate-200">
               <span className="font-bold text-emerald-400 block mb-1">الخلاصة الفنية:</span>
               <p>{signal.aiThesis.summary}</p>
             </div>
 
-            {/* Grid of 4 Core Elements: Delta, Absorption, RSI & Volume, Risk:Reward */}
+            {/* Grid of 4 Elements */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-              <div className="p-2.5 rounded-lg bg-[#07090f] border border-slate-800">
-                <span className="font-bold text-slate-300 block mb-1 text-[11px] text-sky-400">
+              <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800/80">
+                <span className="font-bold block mb-1 text-[11px] text-sky-400">
                   📊 تحليل دلتا الفوليوم (CVD Delta):
                 </span>
-                <p className="text-slate-400 text-[11px]">{signal.aiThesis.deltaAnalysis}</p>
+                <p className="text-slate-300 text-[11px]">{signal.aiThesis.deltaAnalysis}</p>
               </div>
 
-              <div className="p-2.5 rounded-lg bg-[#07090f] border border-slate-800">
-                <span className="font-bold text-slate-300 block mb-1 text-[11px] text-purple-400">
-                  🧲 امتصاص السيولة (Order Flow Absorption):
+              <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800/80">
+                <span className="font-bold block mb-1 text-[11px] text-purple-400">
+                  🧲 امتصاص السيولة (Absorption):
                 </span>
-                <p className="text-slate-400 text-[11px]">{signal.aiThesis.absorption}</p>
+                <p className="text-slate-300 text-[11px]">{signal.aiThesis.absorption}</p>
               </div>
 
-              <div className="p-2.5 rounded-lg bg-[#07090f] border border-slate-800">
-                <span className="font-bold text-slate-300 block mb-1 text-[11px] text-amber-400">
+              <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800/80">
+                <span className="font-bold block mb-1 text-[11px] text-amber-400">
                   ⚡ مؤشر RSI وتناغم الزخم:
                 </span>
-                <p className="text-slate-400 text-[11px]">{signal.aiThesis.rsiVolume}</p>
+                <p className="text-slate-300 text-[11px]">{signal.aiThesis.rsiVolume}</p>
               </div>
 
-              <div className="p-2.5 rounded-lg bg-[#07090f] border border-slate-800">
-                <span className="font-bold text-slate-300 block mb-1 text-[11px] text-emerald-400">
-                  ⚖️ معادلة العائد إلى المخاطرة (R:R):
+              <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800/80">
+                <span className="font-bold block mb-1 text-[11px] text-emerald-400">
+                  ⚖️ معادلة العائد للمخاطرة (R:R):
                 </span>
-                <p className="text-slate-400 text-[11px]">{signal.aiThesis.riskReward}</p>
+                <p className="text-slate-300 text-[11px]">{signal.aiThesis.riskReward}</p>
               </div>
             </div>
 
-            {/* Backtest & Quantitative Verification Footer */}
-            <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-800/80 text-[11px] text-slate-400 font-mono-numbers">
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-800 text-[11px] text-slate-400 font-mono-numbers">
               <div className="flex items-center gap-3">
                 <span>In-Sample Win Rate: <strong className="text-emerald-400">{signal.metrics.inSampleWinRate}%</strong></span>
                 <span>Out-of-Sample: <strong className="text-purple-400">{signal.metrics.outOfSampleWinRate}%</strong></span>
               </div>
-              <span className="text-[10px] text-slate-500">رسوم 0.06% + انزلاق 0.02% مطبقة آلياً</span>
+              <span className="text-[10px] text-slate-400">خصم رسوم 0.06% + انزلاق 0.02% مطبقة آلياً</span>
             </div>
           </div>
         )}
       </div>
 
-      {/* 6. Action Row: Instant 1-Click Telegram Dispatch & Status */}
-      <div className="relative flex flex-wrap items-center justify-between gap-3 pt-2">
+      {/* 7. Action Row: Quick Copy + 1-Click Telegram Send */}
+      <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-800">
         <div className="flex items-center gap-2 text-xs text-slate-400">
           <Clock className="w-3.5 h-3.5 text-slate-500" />
           <span>توقيت الإشارة: {new Date(signal.timestamp).toLocaleTimeString('ar-EG')}</span>
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Copy Signal Button */}
+          <button
+            type="button"
+            onClick={handleCopySignal}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all ${
+              copied
+                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                : 'bg-slate-900 hover:bg-slate-800 text-slate-300 border-slate-700'
+            }`}
+            title="نسخ تفاصيل الصفقة للتداول في بينانس أو بايبيت"
+          >
+            {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 text-slate-400" />}
+            <span>{copied ? 'تم النسخ ✔' : 'نسخ الصفقة'}</span>
+          </button>
+
+          {/* Telegram Status feedback */}
           {telegramStatus && (
             <span
               className={`text-xs px-2.5 py-1 rounded-lg border font-medium ${
@@ -457,18 +494,19 @@ const VipSignalCardComponent: React.FC<VipSignalCardProps> = ({
             </span>
           )}
 
+          {/* 1-Click Telegram Send */}
           <button
             type="button"
             onClick={handleSendTelegram}
             disabled={isSendingTelegram}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 shadow-lg shadow-sky-500/20 active:scale-95 transition-all disabled:opacity-50"
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold text-white bg-sky-600 hover:bg-sky-500 border border-sky-500/40 active:scale-95 transition-all disabled:opacity-50"
           >
             {isSendingTelegram ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
             ) : (
-              <Send className="w-4 h-4" />
+              <Send className="w-3.5 h-3.5" />
             )}
-            <span>إرسال فوري إلى Telegram 🚀</span>
+            <span>إرسال للتلجرام 🚀</span>
           </button>
         </div>
       </div>
@@ -477,4 +515,3 @@ const VipSignalCardComponent: React.FC<VipSignalCardProps> = ({
 };
 
 export const VipSignalCard = React.memo(VipSignalCardComponent);
-

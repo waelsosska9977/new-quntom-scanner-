@@ -26,10 +26,11 @@ import {
   Search,
   Coins,
   BarChart2,
-  MessageSquare,
   ChevronLeft,
   ChevronRight,
-  Gauge
+  Gauge,
+  Target,
+  Compass
 } from 'lucide-react';
 import { AppConfig, CryptoPair, PairLiquidityInfo, Timeframe, TradeSignal } from './types';
 import { fetchBinanceKlines, BinancePriceStream, fetchTop50LiquidityPairs, TOP_50_DEFAULT_PAIRS } from './services/binance';
@@ -38,7 +39,6 @@ import { generateAiTradeAnalysis } from './services/aiAnalyst';
 import { sendSignalToTelegram, sendTargetHitToTelegram } from './services/telegram';
 import { VipSignalCard } from './components/VipSignalCard';
 import { MarketOverviewCard } from './components/MarketOverviewCard';
-import { AiChatbotModal } from './components/AiChatbotModal';
 import { ApiConfigModal } from './components/ApiConfigModal';
 import { VercelExportModal } from './components/VercelExportModal';
 import { PythonCodeModal } from './components/PythonCodeModal';
@@ -94,9 +94,9 @@ export default function App() {
   const [isConfigOpen, setIsConfigOpen] = useState(false);
   const [isVercelExportOpen, setIsVercelExportOpen] = useState(false);
   const [isPythonModalOpen, setIsPythonModalOpen] = useState(false);
-  const [isChatOpen, setIsChatOpen] = useState(false);
   const [activePythonPair, setActivePythonPair] = useState<CryptoPair>('SOLUSDT');
   const [isBroadcastingAll, setIsBroadcastingAll] = useState(false);
+  const [activeTab, setActiveTab] = useState<'signals' | 'radar' | 'quant'>('signals');
   const [telegramToast, setTelegramToast] = useState<{ message: string; type: 'success' | 'info' | 'error' } | null>(null);
 
   // 4. Performance & Pagination State (Ultra-Fast 50 Coins Display)
@@ -517,7 +517,7 @@ export default function App() {
               type="button"
               onClick={handleBroadcastAllSignals}
               disabled={isBroadcastingAll || filteredSignals.length === 0}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-white font-bold text-xs shadow-lg shadow-sky-500/25 transition-all disabled:opacity-50"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-semibold text-xs border border-sky-500/40 transition-all disabled:opacity-50"
               title="بث كل الصفقات النشطة الآن إلى تيليجرام"
             >
               {isBroadcastingAll ? (
@@ -529,8 +529,8 @@ export default function App() {
             </button>
 
             {/* Live WebSocket status */}
-            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900/80 border border-slate-800 text-xs font-mono-numbers">
-              <span className={`w-2 h-2 rounded-full ${wsConnected ? 'bg-[#00f090] shadow-[0_0_8px_#00f090]' : 'bg-amber-400 animate-pulse'}`} />
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-xs font-mono-numbers">
+              <span className={`w-2 h-2 rounded-full ${wsConnected ? 'bg-emerald-400' : 'bg-amber-400 animate-pulse'}`} />
               <span className="text-slate-300 hidden sm:inline">
                 {wsConnected ? 'Binance WS متصل' : 'جاري الاتصال...'}
               </span>
@@ -538,7 +538,7 @@ export default function App() {
 
             {/* Countdown / Auto Refresh */}
             {config.autoRefresh && (
-              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#00f090]/10 border border-[#00f090]/30 text-[#00f090] text-xs font-mono-numbers">
+              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-emerald-400 text-xs font-mono-numbers">
                 <Clock className="w-3.5 h-3.5" />
                 <span>{secondsUntilRefresh}s</span>
               </div>
@@ -549,7 +549,7 @@ export default function App() {
               type="button"
               onClick={() => executeMarketScan()}
               disabled={isScanning}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-[#00f090] hover:bg-[#00f090]/90 text-black font-bold text-xs shadow-lg glow-green transition-all disabled:opacity-50"
+              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs shadow-sm transition-all disabled:opacity-50"
               title="إعادة المسح الآن"
             >
               {isScanning ? (
@@ -560,36 +560,25 @@ export default function App() {
               <span className="hidden sm:inline">مسح الآن</span>
             </button>
 
-            {/* AI Chatbot Header Button */}
-            <button
-              type="button"
-              onClick={() => setIsChatOpen(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-500/20 via-[#00f090]/25 to-purple-500/20 hover:from-emerald-500/30 hover:to-purple-500/30 text-[#00f090] border border-[#00f090]/40 text-xs font-bold transition-all glow-green shadow-sm"
-              title="فتح شات الذكاء الاصطناعي المؤسساتي"
-            >
-              <MessageSquare className="w-4 h-4 text-[#00f090]" />
-              <span className="hidden sm:inline">شات الذكاء الاصطناعي 💬</span>
-            </button>
-
             {/* Vercel 1-Click Export Button */}
             <button
               type="button"
               onClick={() => setIsVercelExportOpen(true)}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 border border-purple-500/40 text-xs font-bold transition-all glow-purple"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-xs font-semibold transition-all"
               title="تصدير ونشر فوري على Vercel"
             >
               <Globe className="w-4 h-4 text-purple-400" />
-              <span className="hidden md:inline">نشر على Vercel ⚡</span>
+              <span className="hidden md:inline">Vercel ⚡</span>
             </button>
 
             {/* APIs & Config Hub Button */}
             <button
               type="button"
               onClick={() => setIsConfigOpen(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-200 border border-slate-700/80 text-xs font-semibold transition-all"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold transition-all"
               title="مركز إعدادات الـ APIs"
             >
-              <Sliders className="w-4 h-4 text-slate-300" />
+              <Sliders className="w-4 h-4 text-slate-400" />
               <span className="hidden md:inline">الإعدادات</span>
             </button>
           </div>
@@ -597,434 +586,516 @@ export default function App() {
       </header>
 
       {/* Main Content Area */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-6">
-        {/* 1. Top VIP Card: Available Trades Radar (Bullish ↗ vs Bearish ↘) */}
-        <MarketOverviewCard
-          signals={signals}
-          onSelectPair={(pair) => {
-            setSelectedPair(pair);
-          }}
-          onOpenChat={() => setIsChatOpen(true)}
-          onBroadcastTelegram={handleBroadcastAllSignals}
-        />
+      <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-5">
+        {/* Navigation View Switcher (Tabs) */}
+        <div className="flex items-center justify-center p-1.5 rounded-2xl bg-slate-900 border border-slate-800 max-w-2xl mx-auto shadow-sm">
+          <button
+            type="button"
+            onClick={() => setActiveTab('signals')}
+            className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 sm:px-4 rounded-xl text-xs sm:text-sm font-bold transition-all ${
+              activeTab === 'signals'
+                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 shadow-sm'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Target className="w-4 h-4" />
+            <span>🎯 صفقات القنص ({filteredSignals.length})</span>
+          </button>
 
-        {/* Banner: Institutional Metrics Bar */}
-        <section className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
-          <div className="p-4 rounded-2xl bg-gradient-to-br from-[#121626] to-[#0c0f1a] border border-slate-800 shadow-lg text-right">
-            <span className="text-[11px] text-slate-400 block mb-1">الصفقات المقتنصة (VIP Signals)</span>
-            <div className="flex items-center justify-between">
-              <span className="text-xl sm:text-2xl font-black text-white font-mono-numbers">
-                {signals.length}
-              </span>
-              <span className="p-1.5 rounded-lg bg-emerald-500/10 text-[#00f090] text-xs font-bold font-mono-numbers">
-                LIVE
+          <button
+            type="button"
+            onClick={() => setActiveTab('radar')}
+            className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 sm:px-4 rounded-xl text-xs sm:text-sm font-bold transition-all ${
+              activeTab === 'radar'
+                ? 'bg-sky-500/20 text-sky-400 border border-sky-500/30 shadow-sm'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Compass className="w-4 h-4" />
+            <span>🧭 رادار السوق (50 عملة)</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('quant')}
+            className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 sm:px-4 rounded-xl text-xs sm:text-sm font-bold transition-all ${
+              activeTab === 'quant'
+                ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30 shadow-sm'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Terminal className="w-4 h-4" />
+            <span>📊 المعايير وبايثون</span>
+          </button>
+        </div>
+
+        {/* View Mode 2: Market Radar */}
+        {activeTab === 'radar' && (
+          <MarketOverviewCard
+            signals={signals}
+            onSelectPair={(pair) => {
+              setSelectedPair(pair);
+              setActiveTab('signals');
+            }}
+            onBroadcastTelegram={handleBroadcastAllSignals}
+          />
+        )}
+
+        {/* View Mode 3: Institutional Quant & Code */}
+        {activeTab === 'quant' && (
+          <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+            <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 text-right">
+              <span className="text-xs text-slate-400 block mb-1">الصفقات المقتنصة (Active Signals)</span>
+              <div className="flex items-center justify-between">
+                <span className="text-2xl font-bold text-white font-mono-numbers">{signals.length}</span>
+                <span className="px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-400 text-xs font-bold font-mono-numbers">LIVE</span>
+              </div>
+              <span className="text-[11px] text-slate-400 font-mono-numbers block mt-1">متابعة لحظية من بينانس</span>
+            </div>
+
+            <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 text-right">
+              <span className="text-xs text-slate-400 block mb-1">حوض السيولة (Liquidity Pool)</span>
+              <div className="flex items-center justify-between">
+                <span className="text-2xl font-bold text-emerald-400 font-mono-numbers">{scanBatchLimit} عملة</span>
+                <span className="text-xs font-bold text-amber-400 font-mono-numbers">TOP 50</span>
+              </div>
+              <span className="text-[11px] text-slate-400 font-mono-numbers block mt-1">
+                حجم 24س: {formatVolumeDollar(liquidityPairs.reduce((acc, p) => acc + (p.quoteVolume24h || 0), 0) || 18500000000)}
               </span>
             </div>
-            <span className="text-[10px] text-slate-500 font-mono-numbers block mt-1">
-              متابعة مباشرة لحظية
-            </span>
-          </div>
 
-          <div className="p-4 rounded-2xl bg-gradient-to-br from-[#121626] to-[#0c0f1a] border border-slate-800 shadow-lg text-right">
-            <span className="text-[11px] text-slate-400 block mb-1">نطاق مسح السيولة (Liquidity Pool)</span>
-            <div className="flex items-center justify-between">
-              <span className="text-xl sm:text-2xl font-black text-[#00f090] font-mono-numbers">
-                {scanBatchLimit} عملة 🏆
-              </span>
-              <span className="text-[10px] font-bold text-amber-400 font-mono-numbers">
-                TOP 50
-              </span>
+            <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 text-right">
+              <span className="text-xs text-slate-400 block mb-1">رسوم التداول المطبقة</span>
+              <div className="flex items-center justify-between">
+                <span className="text-2xl font-bold text-amber-400 font-mono-numbers">0.06%</span>
+                <span className="text-xs text-amber-500 font-mono-numbers">+ 0.02% انزلاق</span>
+              </div>
+              <span className="text-[11px] text-slate-400 font-mono-numbers block mt-1">Walk-Forward 70/30</span>
             </div>
-            <span className="text-[10px] text-slate-400 font-mono-numbers block mt-1">
-              حجم 24س: {formatVolumeDollar(liquidityPairs.reduce((acc, p) => acc + (p.quoteVolume24h || 0), 0) || 18500000000)}
-            </span>
-          </div>
 
-          <div className="p-4 rounded-2xl bg-gradient-to-br from-[#121626] to-[#0c0f1a] border border-slate-800 shadow-lg text-right">
-            <span className="text-[11px] text-slate-400 block mb-1">رسوم التداول المطبقة</span>
-            <div className="flex items-center justify-between">
-              <span className="text-xl sm:text-2xl font-black text-amber-400 font-mono-numbers">
-                0.06%
-              </span>
-              <span className="text-[10px] text-amber-500/80 font-mono-numbers">+ 0.02% انزلاق</span>
-            </div>
-            <span className="text-[10px] text-slate-500 font-mono-numbers block mt-1">
-              Walk-Forward 70/30
-            </span>
-          </div>
-
-          <div className="p-4 rounded-2xl bg-gradient-to-br from-[#121626] to-[#0c0f1a] border border-slate-800 shadow-lg text-right">
-            <span className="text-[11px] text-slate-400 block mb-1">مولد كود بايثون الكمي</span>
-            <div className="flex items-center justify-between">
-              <button
-                type="button"
-                onClick={() => openPythonModal(selectedPair === 'ALL' ? 'SOLUSDT' : selectedPair)}
-                className="flex items-center gap-1.5 text-xs font-bold text-sky-400 hover:text-sky-300 transition-colors"
-              >
-                <Terminal className="w-4 h-4" />
-                <span>عرض كود vectorbt</span>
-              </button>
-              <span className="text-[10px] text-slate-500 font-mono-numbers">Train/Test</span>
-            </div>
-            <span className="text-[10px] text-slate-500 font-mono-numbers block mt-1">
-              جاهز للتشغيل الفوري
-            </span>
-          </div>
-        </section>
-
-        {/* Filter & Control Bar */}
-        <section className="p-4 rounded-2xl bg-[#0e121c] border border-slate-800/80 shadow-xl space-y-4">
-          {/* Top Filter Row: Search, Scan Batch, Timeframe, Direction */}
-          <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-800/70">
-            {/* Search Input */}
-            <div className="relative flex-1 min-w-[200px] max-w-md">
-              <Search className="w-4 h-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="ابحث عن أي عملة (مثال: SOL, BTC, PEPE, SUI, XRP...)"
-                className="w-full bg-[#0a0c13] border border-slate-800 rounded-xl py-2 pr-9 pl-8 text-xs font-mono-numbers text-white focus:outline-none focus:border-[#00f090]/60 transition-colors"
-              />
-              {searchQuery && (
+            <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 text-right">
+              <span className="text-xs text-slate-400 block mb-1">مولد كود بايثون الكمي</span>
+              <div className="flex items-center justify-between mt-1">
                 <button
                   type="button"
-                  onClick={() => setSearchQuery('')}
-                  className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+                  onClick={() => openPythonModal(selectedPair === 'ALL' ? 'SOLUSDT' : selectedPair)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-sky-500/10 text-sky-400 hover:bg-sky-500/20 border border-sky-500/30 text-xs font-bold transition-colors"
                 >
-                  <X className="w-3.5 h-3.5" />
+                  <Terminal className="w-4 h-4" />
+                  <span>عرض كود vectorbt</span>
                 </button>
-              )}
+                <span className="text-xs text-slate-400 font-mono-numbers">Train/Test</span>
+              </div>
+              <span className="text-[11px] text-slate-400 font-mono-numbers block mt-1">جاهز للتشغيل الفوري</span>
             </div>
+          </section>
+        )}
 
-            {/* Scan Batch Selector: Top 10, 25, or 50 Coins */}
-            <div className="flex items-center gap-1.5 bg-[#0a0c13] border border-slate-800 rounded-xl p-1 text-xs">
-              <span className="text-slate-400 text-[11px] px-2 flex items-center gap-1">
-                <Coins className="w-3.5 h-3.5 text-amber-400" />
-                نطاق المسح:
-              </span>
-              {[
-                { label: 'أفضل 50 عملة 🏆', value: 50 },
-                { label: 'أفضل 25 عملة', value: 25 },
-                { label: 'أفضل 10 عملات', value: 10 },
-              ].map((batch) => (
-                <button
-                  key={batch.value}
-                  type="button"
-                  onClick={() => {
-                    setScanBatchLimit(batch.value);
-                  }}
-                  className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
-                    scanBatchLimit === batch.value
-                      ? 'bg-amber-500/20 text-[#ffb800] border border-[#ffb800]/40 glow-gold'
-                      : 'text-slate-400 hover:text-white'
-                  }`}
-                >
-                  {batch.label}
-                </button>
-              ))}
-            </div>
-
-            {/* Timeframe & Direction Filters */}
-            <div className="flex flex-wrap items-center gap-2">
-              {/* Timeframes */}
-              <div className="flex items-center rounded-xl bg-slate-900 border border-slate-800 p-0.5 font-mono-numbers text-xs">
-                {(['1m', '5m', '15m', '1h', '4h'] as Timeframe[]).map((tf) => (
-                  <button
-                    key={tf}
-                    type="button"
-                    onClick={() => setSelectedTimeframe(tf)}
-                    className={`px-2.5 py-1 rounded-lg font-bold transition-all ${
-                      selectedTimeframe === tf
-                        ? 'bg-purple-600 text-white shadow-sm glow-purple'
-                        : 'text-slate-400 hover:text-slate-200'
-                    }`}
-                  >
-                    {tf.toUpperCase()}
-                  </button>
-                ))}
+        {/* View Mode 1 (Default): Signals List & Filter Bar */}
+        {activeTab === 'signals' && (
+          <div className="space-y-4">
+            {/* Quick Glance Stats Strip */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-between">
+                <div>
+                  <span className="text-[11px] text-slate-400 block">إجمالي الصفقات</span>
+                  <span className="text-lg font-black text-white font-mono-numbers">{filteredSignals.length} صفقة</span>
+                </div>
+                <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400">
+                  <Target className="w-4 h-4" />
+                </div>
               </div>
 
-              {/* Direction Filter */}
-              <div className="flex items-center rounded-xl bg-slate-900 border border-slate-800 p-0.5 text-xs">
-                <button
-                  type="button"
-                  onClick={() => setDirectionFilter('ALL')}
-                  className={`px-2.5 py-1 rounded-lg font-medium transition-all ${
-                    directionFilter === 'ALL'
-                      ? 'bg-slate-800 text-white'
-                      : 'text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  الكل
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setDirectionFilter('BUY')}
-                  className={`px-2.5 py-1 rounded-lg font-medium transition-all ${
-                    directionFilter === 'BUY'
-                      ? 'bg-[#00f090]/20 text-[#00f090] border border-[#00f090]/40'
-                      : 'text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  شراء ↗
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setDirectionFilter('SELL')}
-                  className={`px-2.5 py-1 rounded-lg font-medium transition-all ${
-                    directionFilter === 'SELL'
-                      ? 'bg-[#ff3366]/20 text-[#ff3366] border border-[#ff3366]/40'
-                      : 'text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  بيع ↘
-                </button>
+              <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-between">
+                <div>
+                  <span className="text-[11px] text-slate-400 block">صفقات الشراء (BUY)</span>
+                  <span className="text-lg font-black text-emerald-400 font-mono-numbers">
+                    {signals.filter(s => s.direction === 'BUY').length} صعود ↗
+                  </span>
+                </div>
+                <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400">
+                  <TrendingUp className="w-4 h-4" />
+                </div>
               </div>
 
-              {/* VIP only filter */}
-              <button
-                type="button"
-                onClick={() => setOnlyHighConfidence(!onlyHighConfidence)}
-                className={`flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-bold border transition-all ${
-                  onlyHighConfidence
-                    ? 'bg-amber-500/20 text-[#ffb800] border-[#ffb800]/50 glow-gold'
-                    : 'bg-slate-900/80 text-slate-400 border-slate-800 hover:text-slate-300'
-                }`}
-              >
-                <Flame className="w-3.5 h-3.5" />
-                <span>إشارات VIP فقط (&gt;80%)</span>
-              </button>
+              <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-between">
+                <div>
+                  <span className="text-[11px] text-slate-400 block">صفقات البيع (SELL)</span>
+                  <span className="text-lg font-black text-rose-400 font-mono-numbers">
+                    {signals.filter(s => s.direction === 'SELL').length} هبوط ↘
+                  </span>
+                </div>
+                <div className="p-2 rounded-lg bg-rose-500/10 text-rose-400">
+                  <TrendingDown className="w-4 h-4" />
+                </div>
+              </div>
 
-              {/* Speed Mode & On-Demand Charts Toggle */}
-              <button
-                type="button"
-                onClick={() => setGlobalChartsEnabled(!globalChartsEnabled)}
-                className={`flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-bold border transition-all ${
-                  globalChartsEnabled
-                    ? 'bg-purple-900/40 text-purple-300 border-purple-500/50 glow-purple'
-                    : 'bg-emerald-950/40 text-emerald-300 border-emerald-500/40 glow-green'
-                }`}
-                title="التحكم في سرعة وتحميل المخططات البيانية لتخفيف الموقع"
-              >
-                <Gauge className="w-3.5 h-3.5" />
-                <span>{globalChartsEnabled ? 'المخططات: معروضة للكل' : '⚡ وضع السرعة الفائقة (خفيف)'}</span>
-              </button>
-
-              {/* Page Size Selector */}
-              <div className="flex items-center gap-1 bg-slate-900 border border-slate-800 rounded-xl p-0.5 text-xs font-mono-numbers">
-                <span className="text-slate-400 text-[10px] px-1.5">عرض:</span>
-                {[10, 25, 50].map((size) => (
-                  <button
-                    key={size}
-                    type="button"
-                    onClick={() => {
-                      setPageSize(size);
-                      setCurrentPage(1);
-                    }}
-                    className={`px-2 py-0.5 rounded-lg text-xs font-bold transition-all ${
-                      pageSize === size
-                        ? 'bg-[#00f090] text-black shadow-sm font-black'
-                        : 'text-slate-400 hover:text-white'
-                    }`}
-                  >
-                    {size === 50 ? 'الكل 50' : size}
-                  </button>
-                ))}
+              <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-between">
+                <div>
+                  <span className="text-[11px] text-slate-400 block">الفريم ونطاق المسح</span>
+                  <span className="text-lg font-black text-amber-300 font-mono-numbers">
+                    {selectedTimeframe.toUpperCase()} • {scanBatchLimit} عملة
+                  </span>
+                </div>
+                <div className="p-2 rounded-lg bg-amber-500/10 text-amber-300">
+                  <Coins className="w-4 h-4" />
+                </div>
               </div>
             </div>
-          </div>
 
-          {/* Bottom Row: Scrollable 50 Liquidity Coin Selector Chips */}
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between text-[11px] text-slate-400">
-              <span className="flex items-center gap-1 font-semibold">
-                <BarChart2 className="w-3.5 h-3.5 text-[#00f090]" />
-                أفضل 50 عملة من حيث السيولة وحجم التداول (مرتبة تنازلياً حسب الـ Volume):
-              </span>
-              <span className="text-[10px] text-slate-500 font-mono-numbers">
-                انقر على أي عملة لتصفية نتائجها المباشرة
-              </span>
-            </div>
-
-            <div className="flex items-center gap-2 overflow-x-auto pb-2 pt-1 scrollbar-thin">
-              <button
-                type="button"
-                onClick={() => setSelectedPair('ALL')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold font-mono-numbers whitespace-nowrap transition-all shrink-0 ${
-                  selectedPair === 'ALL'
-                    ? 'bg-gradient-to-r from-emerald-500 to-[#00f090] text-black shadow-md glow-green'
-                    : 'bg-slate-900/90 text-slate-400 hover:text-white border border-slate-800'
-                }`}
-              >
-                الكل (عرض كافة الصفقات)
-              </button>
-
-              {(liquidityPairs.length > 0 ? liquidityPairs.slice(0, scanBatchLimit) : TOP_50_DEFAULT_PAIRS.slice(0, scanBatchLimit).map((sym, idx) => ({
-                symbol: sym,
-                quoteVolume24h: (50 - idx) * 110000000 + 45000000,
-                priceChangePercent: 2.1,
-                lastPrice: 100,
-                rank: idx + 1,
-              }))).map((coin) => {
-                const isSelected = selectedPair === coin.symbol;
-                return (
-                  <button
-                    key={coin.symbol}
-                    type="button"
-                    onClick={() => setSelectedPair(coin.symbol)}
-                    className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-mono-numbers whitespace-nowrap transition-all shrink-0 border ${
-                      isSelected
-                        ? 'bg-gradient-to-r from-emerald-500 to-[#00f090] text-black font-bold border-transparent glow-green shadow-lg'
-                        : 'bg-[#0b0e17] hover:bg-[#121626] text-slate-300 border-slate-800 hover:border-slate-700'
-                    }`}
-                  >
-                    <span className={`text-[10px] px-1.5 py-0.2 rounded font-bold ${isSelected ? 'bg-black/30 text-white' : 'bg-slate-800 text-slate-400'}`}>
-                      #{coin.rank}
-                    </span>
-                    <span className="font-bold">{coin.symbol.replace('USDT', '')}</span>
-                    <span className={`text-[10px] ${isSelected ? 'text-black/80 font-bold' : 'text-slate-400'}`}>
-                      {formatVolumeDollar(coin.quoteVolume24h)}
-                    </span>
-                    <span className={`text-[10px] font-bold ${
-                      coin.priceChangePercent >= 0 
-                        ? (isSelected ? 'text-black' : 'text-[#00f090]') 
-                        : (isSelected ? 'text-black' : 'text-[#ff3366]')
-                    }`}>
-                      {coin.priceChangePercent >= 0 ? `+${coin.priceChangePercent}%` : `${coin.priceChangePercent}%`}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </section>
-
-        {/* Signals List */}
-        <section className="space-y-6">
-          {filteredSignals.length === 0 ? (
-            <div className="p-12 text-center rounded-[20px] bg-[#0c101a] border border-slate-800/80 space-y-4">
-              <div className="inline-flex p-4 rounded-full bg-slate-900 border border-slate-800 text-slate-500">
-                <RadarIcon className="w-8 h-8 animate-radar text-[#00f090]" />
-              </div>
-              <h3 className="text-lg font-bold text-white">جاري مسح الأسواق واقتناص الإشارات المؤسساتية...</h3>
-              <p className="text-xs text-slate-400 max-w-md mx-auto">
-                يتم فحص المؤشرات الكمية (EMA, RSI, Volume Delta, Absorption) وتطبيق قواعد التحقق الصارمة مع خصم 0.06% رسوم.
-              </p>
-              <button
-                type="button"
-                onClick={() => executeMarketScan()}
-                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#00f090] text-black font-bold text-xs shadow-lg glow-green"
-              >
-                <RefreshCw className="w-4 h-4" />
-                <span>إعادة الفحص الآن</span>
-              </button>
-            </div>
-          ) : (
-            <div className="space-y-6">
-              {/* Top Pagination Bar */}
-              {totalFiltered > pageSize && (
-                <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-xl bg-[#0c101a] border border-slate-800/80 font-mono-numbers text-xs">
-                  <div className="flex items-center gap-2 text-slate-300">
-                    <span className="w-2 h-2 rounded-full bg-[#00f090]" />
-                    <span>
-                      عرض الصفقات <strong className="text-white">{(safePage - 1) * pageSize + 1}</strong> -{' '}
-                      <strong className="text-white">{Math.min(safePage * pageSize, totalFiltered)}</strong> من إجمالي{' '}
-                      <strong className="text-[#00f090]">{totalFiltered}</strong> صفقة متاحة
-                    </span>
-                  </div>
-
-                  <div className="flex items-center gap-1.5" dir="ltr">
+            {/* Filter & Control Bar */}
+            <section className="p-4 rounded-xl bg-slate-900 border border-slate-800 shadow-sm space-y-3.5">
+              {/* Top Filter Row: Search, Scan Batch, Timeframe, Direction */}
+              <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-800">
+                {/* Search Input */}
+                <div className="relative flex-1 min-w-[200px] max-w-md">
+                  <Search className="w-4 h-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="ابحث عن أي عملة (مثال: SOL, BTC, PEPE, SUI, XRP...)"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2 pr-9 pl-8 text-xs font-mono-numbers text-white focus:outline-none focus:border-emerald-500 transition-colors"
+                  />
+                  {searchQuery && (
                     <button
                       type="button"
-                      onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                      disabled={safePage <= 1}
-                      className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-300 hover:text-white disabled:opacity-30 disabled:pointer-events-none transition-all"
+                      onClick={() => setSearchQuery('')}
+                      className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
                     >
-                      <ChevronLeft className="w-4 h-4" />
-                      <span className="text-xs">السابق</span>
+                      <X className="w-3.5 h-3.5" />
                     </button>
+                  )}
+                </div>
 
-                    {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
+                {/* Scan Batch Selector */}
+                <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-800 rounded-xl p-1 text-xs">
+                  <span className="text-slate-400 text-[11px] px-2 flex items-center gap-1">
+                    <Coins className="w-3.5 h-3.5 text-amber-400" />
+                    نطاق المسح:
+                  </span>
+                  {[
+                    { label: 'أفضل 50 عملة 🏆', value: 50 },
+                    { label: 'أفضل 25 عملة', value: 25 },
+                    { label: 'أفضل 10 عملات', value: 10 },
+                  ].map((batch) => (
+                    <button
+                      key={batch.value}
+                      type="button"
+                      onClick={() => {
+                        setScanBatchLimit(batch.value);
+                      }}
+                      className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all ${
+                        scanBatchLimit === batch.value
+                          ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                          : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      {batch.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Timeframe & Direction Filters */}
+                <div className="flex flex-wrap items-center gap-2">
+                  {/* Timeframes */}
+                  <div className="flex items-center rounded-xl bg-slate-950 border border-slate-800 p-0.5 font-mono-numbers text-xs">
+                    {(['1m', '5m', '15m', '1h', '4h'] as Timeframe[]).map((tf) => (
                       <button
-                        key={p}
+                        key={tf}
                         type="button"
-                        onClick={() => setCurrentPage(p)}
-                        className={`w-8 h-8 rounded-lg text-xs font-bold transition-all ${
-                          safePage === p
-                            ? 'bg-[#00f090] text-black shadow-md glow-green font-black'
-                            : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
+                        onClick={() => setSelectedTimeframe(tf)}
+                        className={`px-2.5 py-1 rounded-lg font-bold transition-all ${
+                          selectedTimeframe === tf
+                            ? 'bg-purple-600 text-white shadow-sm'
+                            : 'text-slate-400 hover:text-slate-200'
                         }`}
                       >
-                        {p}
+                        {tf.toUpperCase()}
                       </button>
                     ))}
+                  </div>
 
+                  {/* Direction Filter */}
+                  <div className="flex items-center rounded-xl bg-slate-950 border border-slate-800 p-0.5 text-xs">
                     <button
                       type="button"
-                      onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                      disabled={safePage >= totalPages}
-                      className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-300 hover:text-white disabled:opacity-30 disabled:pointer-events-none transition-all"
+                      onClick={() => setDirectionFilter('ALL')}
+                      className={`px-2.5 py-1 rounded-lg font-medium transition-all ${
+                        directionFilter === 'ALL'
+                          ? 'bg-slate-800 text-white font-bold'
+                          : 'text-slate-400 hover:text-slate-200'
+                      }`}
                     >
-                      <span className="text-xs">التالي</span>
-                      <ChevronRight className="w-4 h-4" />
+                      الكل
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDirectionFilter('BUY')}
+                      className={`px-2.5 py-1 rounded-lg font-medium transition-all ${
+                        directionFilter === 'BUY'
+                          ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-bold'
+                          : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      شراء ↗
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDirectionFilter('SELL')}
+                      className={`px-2.5 py-1 rounded-lg font-medium transition-all ${
+                        directionFilter === 'SELL'
+                          ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30 font-bold'
+                          : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      بيع ↘
                     </button>
                   </div>
-                </div>
-              )}
 
-              {/* Signals Cards Grid */}
-              <div className="grid grid-cols-1 gap-6">
-                {paginatedSignals.map((signal, index) => (
-                  <VipSignalCard
-                    key={signal.id}
-                    signal={signal}
-                    config={config}
-                    onUpdateSignal={handleUpdateSignal}
-                    defaultShowChart={globalChartsEnabled || (safePage === 1 && index === 0)}
-                  />
-                ))}
+                  {/* VIP only filter */}
+                  <button
+                    type="button"
+                    onClick={() => setOnlyHighConfidence(!onlyHighConfidence)}
+                    className={`flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-semibold border transition-all ${
+                      onlyHighConfidence
+                        ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                        : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-slate-300'
+                    }`}
+                  >
+                    <Flame className="w-3.5 h-3.5 text-amber-400" />
+                    <span>VIP فقط (&gt;80%)</span>
+                  </button>
+
+                  {/* Speed Mode Toggle */}
+                  <button
+                    type="button"
+                    onClick={() => setGlobalChartsEnabled(!globalChartsEnabled)}
+                    className={`flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-semibold border transition-all ${
+                      globalChartsEnabled
+                        ? 'bg-slate-800 text-slate-200 border-slate-700'
+                        : 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30'
+                    }`}
+                    title="التحكم في سرعة وتحميل المخططات البيانية لتخفيف الموقع"
+                  >
+                    <Gauge className="w-3.5 h-3.5" />
+                    <span>{globalChartsEnabled ? 'الشارت: معروض' : '⚡ وضع السرعة (خفيف)'}</span>
+                  </button>
+
+                  {/* Page Size Selector */}
+                  <div className="flex items-center gap-1 bg-slate-950 border border-slate-800 rounded-xl p-0.5 text-xs font-mono-numbers">
+                    <span className="text-slate-400 text-[10px] px-1.5">عرض:</span>
+                    {[10, 25, 50].map((size) => (
+                      <button
+                        key={size}
+                        type="button"
+                        onClick={() => {
+                          setPageSize(size);
+                          setCurrentPage(1);
+                        }}
+                        className={`px-2 py-0.5 rounded-lg text-xs font-bold transition-all ${
+                          pageSize === size
+                            ? 'bg-emerald-500 text-slate-950 shadow-sm'
+                            : 'text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        {size === 50 ? 'الكل 50' : size}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
 
-              {/* Bottom Pagination Bar */}
-              {totalFiltered > pageSize && (
-                <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-xl bg-[#0c101a] border border-slate-800/80 font-mono-numbers text-xs">
-                  <div className="text-slate-400">
-                    الصفحة <strong className="text-white">{safePage}</strong> من <strong className="text-white">{totalPages}</strong>
+              {/* Bottom Row: Scrollable 50 Liquidity Coin Selector Chips */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between text-[11px] text-slate-400">
+                  <span className="flex items-center gap-1 font-semibold">
+                    <BarChart2 className="w-3.5 h-3.5 text-emerald-400" />
+                    تصفية سريعة بالعملة (أفضل 50 عملة سيولة):
+                  </span>
+                  <span className="text-[10px] text-slate-400 font-mono-numbers">
+                    انقر على أي عملة لتصفية نتائجها
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2 overflow-x-auto pb-2 pt-1 scrollbar-thin">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedPair('ALL')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold font-mono-numbers whitespace-nowrap transition-all shrink-0 ${
+                      selectedPair === 'ALL'
+                        ? 'bg-emerald-500 text-slate-950 shadow-sm'
+                        : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
+                    }`}
+                  >
+                    الكل (عرض كافة الصفقات)
+                  </button>
+
+                  {(liquidityPairs.length > 0 ? liquidityPairs.slice(0, scanBatchLimit) : TOP_50_DEFAULT_PAIRS.slice(0, scanBatchLimit).map((sym, idx) => ({
+                    symbol: sym,
+                    quoteVolume24h: (50 - idx) * 110000000 + 45000000,
+                    priceChangePercent: 2.1,
+                    lastPrice: 100,
+                    rank: idx + 1,
+                  }))).map((coin) => {
+                    const isSelected = selectedPair === coin.symbol;
+                    return (
+                      <button
+                        key={coin.symbol}
+                        type="button"
+                        onClick={() => setSelectedPair(coin.symbol)}
+                        className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-mono-numbers whitespace-nowrap transition-all shrink-0 border ${
+                          isSelected
+                            ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 font-bold'
+                            : 'bg-slate-950 hover:bg-slate-850 text-slate-300 border-slate-800 hover:border-slate-700'
+                        }`}
+                      >
+                        <span className={`text-[10px] px-1.5 py-0.2 rounded font-bold ${isSelected ? 'bg-emerald-500/30 text-emerald-200' : 'bg-slate-800 text-slate-400'}`}>
+                          #{coin.rank}
+                        </span>
+                        <span className="font-bold">{coin.symbol.replace('USDT', '')}</span>
+                        <span className={`text-[10px] ${isSelected ? 'text-emerald-300' : 'text-slate-400'}`}>
+                          {formatVolumeDollar(coin.quoteVolume24h)}
+                        </span>
+                        <span className={`text-[10px] font-bold ${
+                          coin.priceChangePercent >= 0 ? 'text-emerald-400' : 'text-rose-400'
+                        }`}>
+                          {coin.priceChangePercent >= 0 ? `+${coin.priceChangePercent}%` : `${coin.priceChangePercent}%`}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </section>
+
+            {/* Signals List */}
+            <section className="space-y-4">
+              {filteredSignals.length === 0 ? (
+                <div className="p-12 text-center rounded-2xl bg-slate-900 border border-slate-800 space-y-4">
+                  <div className="inline-flex p-4 rounded-full bg-slate-950 border border-slate-800 text-slate-500">
+                    <RadarIcon className="w-8 h-8 animate-radar text-emerald-400" />
+                  </div>
+                  <h3 className="text-lg font-bold text-white">جاري مسح الأسواق واقتناص الإشارات المؤسساتية...</h3>
+                  <p className="text-xs text-slate-400 max-w-md mx-auto">
+                    يتم فحص المؤشرات الكمية (EMA, RSI, Volume Delta, Absorption) وتطبيق قواعد التحقق الصارمة مع خصم 0.06% رسوم.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => executeMarketScan()}
+                    className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs shadow-sm transition-all"
+                  >
+                    <RefreshCw className="w-4 h-4" />
+                    <span>إعادة الفحص الآن</span>
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {/* Top Pagination Bar */}
+                  {totalFiltered > pageSize && (
+                    <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-xl bg-slate-900 border border-slate-800 font-mono-numbers text-xs">
+                      <div className="flex items-center gap-2 text-slate-300">
+                        <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                        <span>
+                          عرض الصفقات <strong className="text-white">{(safePage - 1) * pageSize + 1}</strong> -{' '}
+                          <strong className="text-white">{Math.min(safePage * pageSize, totalFiltered)}</strong> من إجمالي{' '}
+                          <strong className="text-emerald-400">{totalFiltered}</strong> صفقة متاحة
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-1.5" dir="ltr">
+                        <button
+                          type="button"
+                          onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                          disabled={safePage <= 1}
+                          className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-800 text-slate-300 hover:text-white disabled:opacity-30 disabled:pointer-events-none transition-all"
+                        >
+                          <ChevronLeft className="w-4 h-4" />
+                          <span className="text-xs">السابق</span>
+                        </button>
+
+                        {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
+                          <button
+                            key={p}
+                            type="button"
+                            onClick={() => setCurrentPage(p)}
+                            className={`w-8 h-8 rounded-lg text-xs font-bold transition-all ${
+                              safePage === p
+                                ? 'bg-emerald-500 text-slate-950 font-black shadow-sm'
+                                : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
+                            }`}
+                          >
+                            {p}
+                          </button>
+                        ))}
+
+                        <button
+                          type="button"
+                          onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                          disabled={safePage >= totalPages}
+                          className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-800 text-slate-300 hover:text-white disabled:opacity-30 disabled:pointer-events-none transition-all"
+                        >
+                          <span className="text-xs">التالي</span>
+                          <ChevronRight className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Signals Cards Grid */}
+                  <div className="grid grid-cols-1 gap-4">
+                    {paginatedSignals.map((signal, index) => (
+                      <VipSignalCard
+                        key={signal.id}
+                        signal={signal}
+                        config={config}
+                        onUpdateSignal={handleUpdateSignal}
+                        defaultShowChart={globalChartsEnabled || (safePage === 1 && index === 0)}
+                      />
+                    ))}
                   </div>
 
-                  <div className="flex items-center gap-1.5" dir="ltr">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setCurrentPage((p) => Math.max(1, p - 1));
-                        window.scrollTo({ top: 350, behavior: 'smooth' });
-                      }}
-                      disabled={safePage <= 1}
-                      className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-300 hover:text-white disabled:opacity-30 disabled:pointer-events-none transition-all"
-                    >
-                      <ChevronLeft className="w-4 h-4" />
-                      <span className="text-xs">الصفحة السابقة</span>
-                    </button>
+                  {/* Bottom Pagination Bar */}
+                  {totalFiltered > pageSize && (
+                    <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-xl bg-slate-900 border border-slate-800 font-mono-numbers text-xs">
+                      <div className="text-slate-400">
+                        الصفحة <strong className="text-white">{safePage}</strong> من <strong className="text-white">{totalPages}</strong>
+                      </div>
 
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setCurrentPage((p) => Math.min(totalPages, p + 1));
-                        window.scrollTo({ top: 350, behavior: 'smooth' });
-                      }}
-                      disabled={safePage >= totalPages}
-                      className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-300 hover:text-white disabled:opacity-30 disabled:pointer-events-none transition-all"
-                    >
-                      <span className="text-xs">الصفحة التالية</span>
-                      <ChevronRight className="w-4 h-4" />
-                    </button>
-                  </div>
+                      <div className="flex items-center gap-1.5" dir="ltr">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCurrentPage((p) => Math.max(1, p - 1));
+                            window.scrollTo({ top: 350, behavior: 'smooth' });
+                          }}
+                          disabled={safePage <= 1}
+                          className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-800 text-slate-300 hover:text-white disabled:opacity-30 disabled:pointer-events-none transition-all"
+                        >
+                          <ChevronLeft className="w-4 h-4" />
+                          <span className="text-xs">الصفحة السابقة</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCurrentPage((p) => Math.min(totalPages, p + 1));
+                            window.scrollTo({ top: 350, behavior: 'smooth' });
+                          }}
+                          disabled={safePage >= totalPages}
+                          className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-800 text-slate-300 hover:text-white disabled:opacity-30 disabled:pointer-events-none transition-all"
+                        >
+                          <span className="text-xs">الصفحة التالية</span>
+                          <ChevronRight className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
-            </div>
-          )}
-        </section>
+            </section>
+          </div>
+        )}
       </main>
 
       {/* Footer */}
@@ -1046,37 +1117,12 @@ export default function App() {
         </div>
       </footer>
 
-      {/* Floating AI Chatbot Action Button (Bottom Left) */}
-      <button
-        type="button"
-        onClick={() => setIsChatOpen(true)}
-        className="fixed bottom-6 left-6 z-40 flex items-center gap-2.5 px-4 py-3 rounded-full bg-gradient-to-r from-[#00f090] to-emerald-400 text-black font-black text-xs shadow-2xl shadow-[#00f090]/40 hover:scale-105 active:scale-95 transition-all glow-green cursor-pointer"
-        title="المحلل الذكي - اضغط للتحدث مع الذكاء الاصطناعي"
-      >
-        <div className="relative">
-          <Bot className="w-5 h-5 text-black" />
-          <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-purple-600 animate-ping" />
-        </div>
-        <span className="font-bold">المحلل الذكي (AI Chat)</span>
-      </button>
-
       {/* Modals */}
       <ApiConfigModal
         isOpen={isConfigOpen}
         onClose={() => setIsConfigOpen(false)}
         config={config}
         onSaveConfig={handleSaveConfig}
-      />
-
-      <AiChatbotModal
-        isOpen={isChatOpen}
-        onClose={() => setIsChatOpen(false)}
-        config={config}
-        signals={signals}
-        onSelectPair={(pair) => {
-          setSelectedPair(pair);
-          setIsChatOpen(false);
-        }}
       />
 
       <VercelExportModal
