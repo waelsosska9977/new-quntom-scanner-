@@ -1,14 +1,12 @@
-export type CryptoPair = 
-  | 'SOLUSDT'
-  | 'BTCUSDT'
-  | 'ETHUSDT'
-  | 'SUIUSDT'
-  | 'HBARUSDT'
-  | 'AVAXUSDT'
-  | 'DOGEUSDT'
-  | 'BNBUSDT'
-  | 'NEARUSDT'
-  | 'LINKUSDT';
+export type CryptoPair = string;
+
+export interface PairLiquidityInfo {
+  symbol: string;
+  quoteVolume24h: number; // in USDT ($)
+  priceChangePercent: number;
+  lastPrice: number;
+  rank: number;
+}
 
 export type Timeframe = '1m' | '5m' | '15m' | '1h' | '4h';
 

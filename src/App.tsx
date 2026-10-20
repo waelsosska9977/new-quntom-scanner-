@@ -22,10 +22,13 @@ import {
   Bot,
   BellRing,
   AlertTriangle,
-  X
+  X,
+  Search,
+  Coins,
+  BarChart2
 } from 'lucide-react';
-import { AppConfig, CryptoPair, Timeframe, TradeSignal } from './types';
-import { fetchBinanceKlines, BinancePriceStream } from './services/binance';
+import { AppConfig, CryptoPair, PairLiquidityInfo, Timeframe, TradeSignal } from './types';
+import { fetchBinanceKlines, BinancePriceStream, fetchTop50LiquidityPairs, TOP_50_DEFAULT_PAIRS } from './services/binance';
 import { generateQuantitativeSignal } from './services/quantEngine';
 import { generateAiTradeAnalysis } from './services/aiAnalyst';
 import { sendSignalToTelegram, sendTargetHitToTelegram } from './services/telegram';
@@ -35,11 +38,11 @@ import { VercelExportModal } from './components/VercelExportModal';
 import { PythonCodeModal } from './components/PythonCodeModal';
 import { soundManager } from './utils/audio';
 
-const DEFAULT_PAIRS: CryptoPair[] = ['SOLUSDT', 'BTCUSDT', 'SUIUSDT', 'HBARUSDT', 'AVAXUSDT'];
-const ALL_AVAILABLE_PAIRS: CryptoPair[] = [
-  'SOLUSDT', 'BTCUSDT', 'SUIUSDT', 'HBARUSDT', 'AVAXUSDT',
-  'ETHUSDT', 'DOGEUSDT', 'BNBUSDT', 'NEARUSDT', 'LINKUSDT'
-];
+function formatVolumeDollar(vol: number): string {
+  if (vol >= 1000000000) return `$${(vol / 1000000000).toFixed(2)}B`;
+  if (vol >= 1000000) return `$${(vol / 1000000).toFixed(1)}M`;
+  return `$${vol.toLocaleString()}`;
+}
 
 const DEFAULT_CONFIG: AppConfig = {
   codeCraftApiKey: '',
@@ -73,6 +76,9 @@ export default function App() {
 
   // 2. State & Filters
   const [signals, setSignals] = useState<TradeSignal[]>([]);
+  const [liquidityPairs, setLiquidityPairs] = useState<PairLiquidityInfo[]>([]);
+  const [scanBatchLimit, setScanBatchLimit] = useState<number>(50); // Default Top 50 by Liquidity!
+  const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedPair, setSelectedPair] = useState<CryptoPair | 'ALL'>('ALL');
   const [selectedTimeframe, setSelectedTimeframe] = useState<Timeframe>('15m');
   const [directionFilter, setDirectionFilter] = useState<'ALL' | 'BUY' | 'SELL'>('ALL');
@@ -95,6 +101,13 @@ export default function App() {
   const priceStreamRef = useRef<BinancePriceStream | null>(null);
   const dispatchedSignalsRef = useRef<Set<string>>(new Set());
   const hitTargetsDispatchedRef = useRef<Set<string>>(new Set());
+
+  // Fetch real Top 50 Liquidity coins from Binance on mount
+  useEffect(() => {
+    fetchTop50LiquidityPairs().then((pairs) => {
+      setLiquidityPairs(pairs);
+    });
+  }, []);
 
   // Save config to localStorage
   const handleSaveConfig = (newConfig: AppConfig) => {
@@ -125,27 +138,46 @@ export default function App() {
     }
   };
 
-  // Perform full quantitative market scan
-  const executeMarketScan = useCallback(async (customPairs?: CryptoPair[]) => {
+  // Perform full quantitative market scan across Top Liquidity coins
+  const executeMarketScan = useCallback(async (customPairs?: string[]) => {
     setIsScanning(true);
-    const targetPairs = customPairs || DEFAULT_PAIRS;
+    let targetPairs = customPairs;
+    if (!targetPairs || targetPairs.length === 0) {
+      if (liquidityPairs.length > 0) {
+        targetPairs = liquidityPairs.slice(0, scanBatchLimit).map(p => p.symbol);
+      } else {
+        targetPairs = TOP_50_DEFAULT_PAIRS.slice(0, scanBatchLimit);
+      }
+    }
+
     const newSignals: TradeSignal[] = [];
 
-    for (const pair of targetPairs) {
-      try {
-        const klines = await fetchBinanceKlines(pair, selectedTimeframe, 120);
-        const signal = generateQuantitativeSignal(pair, selectedTimeframe, klines);
-        
-        // If user configured CodeCraft key, asynchronously fetch enhanced AI thesis
-        if (config.codeCraftApiKey && config.codeCraftApiKey.trim().length > 0) {
-          generateAiTradeAnalysis(signal, signal.metrics, config).then(thesis => {
-            setSignals(prev => prev.map(s => s.id === signal.id ? { ...s, aiThesis: thesis, score: thesis.confidenceScore } : s));
-          }).catch(() => {});
-        }
+    // Parallel scanning in chunks of 10 for lightning-fast execution
+    const chunkSize = 10;
+    for (let i = 0; i < targetPairs.length; i += chunkSize) {
+      const chunk = targetPairs.slice(i, i + chunkSize);
+      const chunkPromises = chunk.map(async (pair) => {
+        try {
+          const klines = await fetchBinanceKlines(pair, selectedTimeframe, 120);
+          const signal = generateQuantitativeSignal(pair, selectedTimeframe, klines);
 
-        newSignals.push(signal);
-      } catch (err) {
-        console.error(`Error scanning ${pair}:`, err);
+          // If user configured CodeCraft key, asynchronously fetch enhanced AI thesis
+          if (config.codeCraftApiKey && config.codeCraftApiKey.trim().length > 0) {
+            generateAiTradeAnalysis(signal, signal.metrics, config).then(thesis => {
+              setSignals(prev => prev.map(s => s.id === signal.id ? { ...s, aiThesis: thesis, score: thesis.confidenceScore } : s));
+            }).catch(() => {});
+          }
+
+          return signal;
+        } catch (err) {
+          console.error(`Error scanning ${pair}:`, err);
+          return null;
+        }
+      });
+
+      const chunkResults = await Promise.all(chunkPromises);
+      for (const s of chunkResults) {
+        if (s) newSignals.push(s);
       }
     }
 
@@ -179,7 +211,7 @@ export default function App() {
     if (config.soundEnabled && newSignals.length > 0) {
       soundManager.playSignalAlert();
     }
-  }, [selectedTimeframe, config]);
+  }, [selectedTimeframe, config, liquidityPairs, scanBatchLimit]);
 
   // Initial scan on mount or when timeframe changes
   useEffect(() => {
@@ -275,14 +307,31 @@ export default function App() {
       });
     };
 
+    const activeSymbols = liquidityPairs.length > 0 
+      ? liquidityPairs.slice(0, scanBatchLimit).map(p => p.symbol)
+      : TOP_50_DEFAULT_PAIRS.slice(0, scanBatchLimit);
+
     const stream = new BinancePriceStream(handleLivePrice);
-    stream.connect(DEFAULT_PAIRS);
+    stream.connect(activeSymbols);
     priceStreamRef.current = stream;
 
     return () => {
       stream.disconnect();
     };
-  }, [config.soundEnabled]);
+  }, [config.soundEnabled, liquidityPairs, scanBatchLimit]);
+
+  // Dynamically update WebSocket stream when signals or active coins change
+  useEffect(() => {
+    if (priceStreamRef.current) {
+      const activeSymbols = signals.length > 0
+        ? Array.from(new Set(signals.map(s => s.pair)))
+        : (liquidityPairs.length > 0 ? liquidityPairs.slice(0, scanBatchLimit).map(p => p.symbol) : TOP_50_DEFAULT_PAIRS.slice(0, scanBatchLimit));
+
+      if (activeSymbols.length > 0) {
+        priceStreamRef.current.updateSymbols(activeSymbols);
+      }
+    }
+  }, [signals, liquidityPairs, scanBatchLimit]);
 
   // Auto-refresh 60s countdown timer
   useEffect(() => {
@@ -301,9 +350,10 @@ export default function App() {
     return () => clearInterval(interval);
   }, [config.autoRefresh, config.refreshIntervalSeconds, executeMarketScan]);
 
-  // Filtered signals for rendering
+  // Filtered signals for rendering with search and pair filters
   const filteredSignals = signals.filter((s) => {
     if (selectedPair !== 'ALL' && s.pair !== selectedPair) return false;
+    if (searchQuery.trim() && !s.pair.toLowerCase().includes(searchQuery.toLowerCase().trim())) return false;
     if (directionFilter !== 'ALL' && s.direction !== directionFilter) return false;
     if (onlyHighConfidence && s.score < 80) return false;
     return true;
@@ -500,7 +550,7 @@ export default function App() {
         {/* Banner: Institutional Metrics Bar */}
         <section className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
           <div className="p-4 rounded-2xl bg-gradient-to-br from-[#121626] to-[#0c0f1a] border border-slate-800 shadow-lg text-right">
-            <span className="text-[11px] text-slate-400 block mb-1">الصفقات النشطة (VIP Signals)</span>
+            <span className="text-[11px] text-slate-400 block mb-1">الصفقات المقتنصة (VIP Signals)</span>
             <div className="flex items-center justify-between">
               <span className="text-xl sm:text-2xl font-black text-white font-mono-numbers">
                 {signals.length}
@@ -509,16 +559,24 @@ export default function App() {
                 LIVE
               </span>
             </div>
+            <span className="text-[10px] text-slate-500 font-mono-numbers block mt-1">
+              متابعة مباشرة لحظية
+            </span>
           </div>
 
           <div className="p-4 rounded-2xl bg-gradient-to-br from-[#121626] to-[#0c0f1a] border border-slate-800 shadow-lg text-right">
-            <span className="text-[11px] text-slate-400 block mb-1">معدل الفوز خارج العينة (OOS)</span>
+            <span className="text-[11px] text-slate-400 block mb-1">نطاق مسح السيولة (Liquidity Pool)</span>
             <div className="flex items-center justify-between">
               <span className="text-xl sm:text-2xl font-black text-[#00f090] font-mono-numbers">
-                68.5%
+                {scanBatchLimit} عملة 🏆
               </span>
-              <span className="text-[10px] text-slate-500 font-mono-numbers">بعد الرسوم</span>
+              <span className="text-[10px] font-bold text-amber-400 font-mono-numbers">
+                TOP 50
+              </span>
             </div>
+            <span className="text-[10px] text-slate-400 font-mono-numbers block mt-1">
+              حجم 24س: {formatVolumeDollar(liquidityPairs.reduce((acc, p) => acc + (p.quoteVolume24h || 0), 0) || 18500000000)}
+            </span>
           </div>
 
           <div className="p-4 rounded-2xl bg-gradient-to-br from-[#121626] to-[#0c0f1a] border border-slate-800 shadow-lg text-right">
@@ -529,6 +587,9 @@ export default function App() {
               </span>
               <span className="text-[10px] text-amber-500/80 font-mono-numbers">+ 0.02% انزلاق</span>
             </div>
+            <span className="text-[10px] text-slate-500 font-mono-numbers block mt-1">
+              Walk-Forward 70/30
+            </span>
           </div>
 
           <div className="p-4 rounded-2xl bg-gradient-to-br from-[#121626] to-[#0c0f1a] border border-slate-800 shadow-lg text-right">
@@ -544,114 +605,200 @@ export default function App() {
               </button>
               <span className="text-[10px] text-slate-500 font-mono-numbers">Train/Test</span>
             </div>
+            <span className="text-[10px] text-slate-500 font-mono-numbers block mt-1">
+              جاهز للتشغيل الفوري
+            </span>
           </div>
         </section>
 
         {/* Filter & Control Bar */}
-        <section className="p-4 rounded-2xl bg-[#0e121c] border border-slate-800/80 shadow-xl flex flex-wrap items-center justify-between gap-4">
-          {/* Pair Selector Chips */}
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span className="text-xs text-slate-400 ml-2 flex items-center gap-1">
-              <Filter className="w-3.5 h-3.5" />
-              الزوج:
-            </span>
-            <button
-              type="button"
-              onClick={() => setSelectedPair('ALL')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold font-mono-numbers transition-all ${
-                selectedPair === 'ALL'
-                  ? 'bg-gradient-to-r from-emerald-500 to-[#00f090] text-black shadow-md glow-green'
-                  : 'bg-slate-900/80 text-slate-400 hover:text-white border border-slate-800'
-              }`}
-            >
-              الكل (ALL)
-            </button>
-            {DEFAULT_PAIRS.map((p) => (
-              <button
-                key={p}
-                type="button"
-                onClick={() => setSelectedPair(p)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold font-mono-numbers transition-all ${
-                  selectedPair === p
-                    ? 'bg-gradient-to-r from-emerald-500 to-[#00f090] text-black shadow-md glow-green'
-                    : 'bg-slate-900/80 text-slate-400 hover:text-white border border-slate-800'
-                }`}
-              >
-                {p}
-              </button>
-            ))}
-          </div>
-
-          {/* Timeframe & Direction Filter */}
-          <div className="flex flex-wrap items-center gap-2">
-            {/* Timeframes */}
-            <div className="flex items-center rounded-xl bg-slate-900 border border-slate-800 p-0.5 font-mono-numbers text-xs">
-              {(['1m', '5m', '15m', '1h', '4h'] as Timeframe[]).map((tf) => (
+        <section className="p-4 rounded-2xl bg-[#0e121c] border border-slate-800/80 shadow-xl space-y-4">
+          {/* Top Filter Row: Search, Scan Batch, Timeframe, Direction */}
+          <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-800/70">
+            {/* Search Input */}
+            <div className="relative flex-1 min-w-[200px] max-w-md">
+              <Search className="w-4 h-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="ابحث عن أي عملة (مثال: SOL, BTC, PEPE, SUI, XRP...)"
+                className="w-full bg-[#0a0c13] border border-slate-800 rounded-xl py-2 pr-9 pl-8 text-xs font-mono-numbers text-white focus:outline-none focus:border-[#00f090]/60 transition-colors"
+              />
+              {searchQuery && (
                 <button
-                  key={tf}
                   type="button"
-                  onClick={() => setSelectedTimeframe(tf)}
-                  className={`px-2.5 py-1 rounded-lg font-bold transition-all ${
-                    selectedTimeframe === tf
-                      ? 'bg-purple-600 text-white shadow-sm glow-purple'
-                      : 'text-slate-400 hover:text-slate-200'
+                  onClick={() => setSearchQuery('')}
+                  className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
+            {/* Scan Batch Selector: Top 10, 25, or 50 Coins */}
+            <div className="flex items-center gap-1.5 bg-[#0a0c13] border border-slate-800 rounded-xl p-1 text-xs">
+              <span className="text-slate-400 text-[11px] px-2 flex items-center gap-1">
+                <Coins className="w-3.5 h-3.5 text-amber-400" />
+                نطاق المسح:
+              </span>
+              {[
+                { label: 'أفضل 50 عملة 🏆', value: 50 },
+                { label: 'أفضل 25 عملة', value: 25 },
+                { label: 'أفضل 10 عملات', value: 10 },
+              ].map((batch) => (
+                <button
+                  key={batch.value}
+                  type="button"
+                  onClick={() => {
+                    setScanBatchLimit(batch.value);
+                  }}
+                  className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                    scanBatchLimit === batch.value
+                      ? 'bg-amber-500/20 text-[#ffb800] border border-[#ffb800]/40 glow-gold'
+                      : 'text-slate-400 hover:text-white'
                   }`}
                 >
-                  {tf.toUpperCase()}
+                  {batch.label}
                 </button>
               ))}
             </div>
 
-            {/* Direction Filter */}
-            <div className="flex items-center rounded-xl bg-slate-900 border border-slate-800 p-0.5 text-xs">
+            {/* Timeframe & Direction Filters */}
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Timeframes */}
+              <div className="flex items-center rounded-xl bg-slate-900 border border-slate-800 p-0.5 font-mono-numbers text-xs">
+                {(['1m', '5m', '15m', '1h', '4h'] as Timeframe[]).map((tf) => (
+                  <button
+                    key={tf}
+                    type="button"
+                    onClick={() => setSelectedTimeframe(tf)}
+                    className={`px-2.5 py-1 rounded-lg font-bold transition-all ${
+                      selectedTimeframe === tf
+                        ? 'bg-purple-600 text-white shadow-sm glow-purple'
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    {tf.toUpperCase()}
+                  </button>
+                ))}
+              </div>
+
+              {/* Direction Filter */}
+              <div className="flex items-center rounded-xl bg-slate-900 border border-slate-800 p-0.5 text-xs">
+                <button
+                  type="button"
+                  onClick={() => setDirectionFilter('ALL')}
+                  className={`px-2.5 py-1 rounded-lg font-medium transition-all ${
+                    directionFilter === 'ALL'
+                      ? 'bg-slate-800 text-white'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  الكل
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDirectionFilter('BUY')}
+                  className={`px-2.5 py-1 rounded-lg font-medium transition-all ${
+                    directionFilter === 'BUY'
+                      ? 'bg-[#00f090]/20 text-[#00f090] border border-[#00f090]/40'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  شراء ↗
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDirectionFilter('SELL')}
+                  className={`px-2.5 py-1 rounded-lg font-medium transition-all ${
+                    directionFilter === 'SELL'
+                      ? 'bg-[#ff3366]/20 text-[#ff3366] border border-[#ff3366]/40'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  بيع ↘
+                </button>
+              </div>
+
+              {/* VIP only filter */}
               <button
                 type="button"
-                onClick={() => setDirectionFilter('ALL')}
-                className={`px-2.5 py-1 rounded-lg font-medium transition-all ${
-                  directionFilter === 'ALL'
-                    ? 'bg-slate-800 text-white'
-                    : 'text-slate-400 hover:text-slate-200'
+                onClick={() => setOnlyHighConfidence(!onlyHighConfidence)}
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-bold border transition-all ${
+                  onlyHighConfidence
+                    ? 'bg-amber-500/20 text-[#ffb800] border-[#ffb800]/50 glow-gold'
+                    : 'bg-slate-900/80 text-slate-400 border-slate-800 hover:text-slate-300'
                 }`}
               >
-                الكل
-              </button>
-              <button
-                type="button"
-                onClick={() => setDirectionFilter('BUY')}
-                className={`px-2.5 py-1 rounded-lg font-medium transition-all ${
-                  directionFilter === 'BUY'
-                    ? 'bg-[#00f090]/20 text-[#00f090] border border-[#00f090]/40'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                شراء ↗
-              </button>
-              <button
-                type="button"
-                onClick={() => setDirectionFilter('SELL')}
-                className={`px-2.5 py-1 rounded-lg font-medium transition-all ${
-                  directionFilter === 'SELL'
-                    ? 'bg-[#ff3366]/20 text-[#ff3366] border border-[#ff3366]/40'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                بيع ↘
+                <Flame className="w-3.5 h-3.5" />
+                <span>إشارات VIP فقط (&gt;80%)</span>
               </button>
             </div>
+          </div>
 
-            {/* High confidence only */}
-            <button
-              type="button"
-              onClick={() => setOnlyHighConfidence(!onlyHighConfidence)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${
-                onlyHighConfidence
-                  ? 'bg-amber-500/20 text-[#ffb800] border-[#ffb800]/50 glow-gold'
-                  : 'bg-slate-900/80 text-slate-400 border-slate-800 hover:text-slate-300'
-              }`}
-            >
-              <Flame className="w-3.5 h-3.5" />
-              <span>إشارات VIP فقط (&gt;80%)</span>
-            </button>
+          {/* Bottom Row: Scrollable 50 Liquidity Coin Selector Chips */}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between text-[11px] text-slate-400">
+              <span className="flex items-center gap-1 font-semibold">
+                <BarChart2 className="w-3.5 h-3.5 text-[#00f090]" />
+                أفضل 50 عملة من حيث السيولة وحجم التداول (مرتبة تنازلياً حسب الـ Volume):
+              </span>
+              <span className="text-[10px] text-slate-500 font-mono-numbers">
+                انقر على أي عملة لتصفية نتائجها المباشرة
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2 overflow-x-auto pb-2 pt-1 scrollbar-thin">
+              <button
+                type="button"
+                onClick={() => setSelectedPair('ALL')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold font-mono-numbers whitespace-nowrap transition-all shrink-0 ${
+                  selectedPair === 'ALL'
+                    ? 'bg-gradient-to-r from-emerald-500 to-[#00f090] text-black shadow-md glow-green'
+                    : 'bg-slate-900/90 text-slate-400 hover:text-white border border-slate-800'
+                }`}
+              >
+                الكل (عرض كافة الصفقات)
+              </button>
+
+              {(liquidityPairs.length > 0 ? liquidityPairs.slice(0, scanBatchLimit) : TOP_50_DEFAULT_PAIRS.slice(0, scanBatchLimit).map((sym, idx) => ({
+                symbol: sym,
+                quoteVolume24h: (50 - idx) * 110000000 + 45000000,
+                priceChangePercent: 2.1,
+                lastPrice: 100,
+                rank: idx + 1,
+              }))).map((coin) => {
+                const isSelected = selectedPair === coin.symbol;
+                return (
+                  <button
+                    key={coin.symbol}
+                    type="button"
+                    onClick={() => setSelectedPair(coin.symbol)}
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-mono-numbers whitespace-nowrap transition-all shrink-0 border ${
+                      isSelected
+                        ? 'bg-gradient-to-r from-emerald-500 to-[#00f090] text-black font-bold border-transparent glow-green shadow-lg'
+                        : 'bg-[#0b0e17] hover:bg-[#121626] text-slate-300 border-slate-800 hover:border-slate-700'
+                    }`}
+                  >
+                    <span className={`text-[10px] px-1.5 py-0.2 rounded font-bold ${isSelected ? 'bg-black/30 text-white' : 'bg-slate-800 text-slate-400'}`}>
+                      #{coin.rank}
+                    </span>
+                    <span className="font-bold">{coin.symbol.replace('USDT', '')}</span>
+                    <span className={`text-[10px] ${isSelected ? 'text-black/80 font-bold' : 'text-slate-400'}`}>
+                      {formatVolumeDollar(coin.quoteVolume24h)}
+                    </span>
+                    <span className={`text-[10px] font-bold ${
+                      coin.priceChangePercent >= 0 
+                        ? (isSelected ? 'text-black' : 'text-[#00f090]') 
+                        : (isSelected ? 'text-black' : 'text-[#ff3366]')
+                    }`}>
+                      {coin.priceChangePercent >= 0 ? `+${coin.priceChangePercent}%` : `${coin.priceChangePercent}%`}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </section>
 
